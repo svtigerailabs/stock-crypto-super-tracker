@@ -158,6 +158,7 @@ function navigate(view) {
     case 'news': renderLatestNews(); break;
     case 'saved-news': renderSavedNews(); break;
     case 'profiles': renderProfiles(); break;
+    case 'sectors': renderSectors(); break;
     case 'crypto': renderCryptoDashboard(); break;
     case 'settings': renderSettings(); break;
   }
@@ -709,7 +710,7 @@ function buildStockDetailedRow(symbol, rank) {
   const chartData = state.stockCharts?.[symbol]?.[period] || p.sparkline || [];
   const spark = buildSparklineSVG(chartData, 90, 26, '#3fb950', '#f85149');
   const vol = s.volume ? fmtVol(s.volume) : (p.avgVolume || '—');
-  const mcap = p.marketCap || '—';
+  const mcap = p.marketCap ? (typeof p.marketCap === 'number' ? fmtVol(p.marketCap) : p.marketCap) : '—';
   const perf = p._perf || {};
   const dir = typeof s.changePercent === 'number' ? (s.changePercent >= 0 ? 'up' : 'down') : '';
 
@@ -768,7 +769,7 @@ function updateStockDetailedRow(symbol) {
   const chartData = state.stockCharts?.[symbol]?.[period] || p.sparkline || [];
   const spark = buildSparklineSVG(chartData, 90, 26, '#3fb950', '#f85149');
   const vol = s.volume ? fmtVol(s.volume) : (p.avgVolume || '—');
-  const mcap = p.marketCap || '—';
+  const mcap = p.marketCap ? (typeof p.marketCap === 'number' ? fmtVol(p.marketCap) : p.marketCap) : '—';
   const price = typeof s.price === 'number' ? `$${s.price.toFixed(2)}` : '—';
   const rank = row.querySelector('.lcw-rank')?.textContent || '';
 
@@ -3456,6 +3457,182 @@ document.addEventListener('keydown', e => {
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'n') { e.preventDefault(); showAddAlertModal(); }
 });
+
+/* ─── MARKET SECTOR TRENDS ────────────────────────────────────── */
+let _sectorsData = null;
+let _sectorPeriod = '1D';
+let _sectorHoverTimer = null;
+
+const SECTOR_GROUP_ORDER = ['US Sectors', 'US Market Style', 'International', 'Commodities & Alts', 'Fixed Income', 'Specialty'];
+
+async function renderSectors() {
+  const grid = document.getElementById('sectors-grid');
+  if (!grid) return;
+  if (!_sectorsData) {
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><h3>Loading sector data…</h3><p>Fetching performance for 38 market sectors</p></div>';
+    try {
+      _sectorsData = await api('GET', '/sectors');
+    } catch (e) {
+      grid.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Failed to load sectors</h3><p>${e.message}</p><button class="btn-secondary" onclick="refreshSectors()">Retry</button></div>`;
+      return;
+    }
+  }
+  _buildSectorGrid();
+}
+
+async function refreshSectors() {
+  _sectorsData = null;
+  const grid = document.getElementById('sectors-grid');
+  if (grid) grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><h3>Refreshing…</h3></div>';
+  await renderSectors();
+}
+
+function setSectorPeriod(period) {
+  _sectorPeriod = period;
+  document.querySelectorAll('.sector-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
+  _buildSectorGrid();
+}
+
+function _buildSectorGrid() {
+  const grid = document.getElementById('sectors-grid');
+  if (!grid || !_sectorsData) return;
+
+  const period = _sectorPeriod;
+  // Compute global maxAbs for scaling bars across ALL sectors
+  const allVals = _sectorsData.map(s => s.perf?.[period]).filter(v => v != null);
+  const maxAbs = allVals.length ? Math.max(...allVals.map(Math.abs), 0.01) : 1;
+
+  // Group sectors
+  const groups = {};
+  for (const s of _sectorsData) {
+    if (!groups[s.group]) groups[s.group] = [];
+    groups[s.group].push(s);
+  }
+  // Sort each group best→worst for the chosen period
+  for (const arr of Object.values(groups)) {
+    arr.sort((a, b) => (b.perf?.[period] ?? -999) - (a.perf?.[period] ?? -999));
+  }
+
+  // Update subtitle
+  const valid = allVals.length;
+  const up = allVals.filter(v => v > 0).length;
+  const dn = allVals.filter(v => v < 0).length;
+  const subtitle = document.getElementById('sectors-subtitle');
+  if (subtitle) subtitle.textContent = `${_sectorsData.length} sectors · ${up} ↑ up · ${dn} ↓ down · ${period} performance`;
+
+  grid.innerHTML = SECTOR_GROUP_ORDER.map(groupName => {
+    const items = groups[groupName] || [];
+    if (!items.length) return '';
+    return `
+      <div class="sector-group">
+        <div class="sector-group-header">${groupName}</div>
+        ${items.map(s => _buildSectorRow(s, period, maxAbs)).join('')}
+      </div>`;
+  }).join('');
+}
+
+function _buildSectorRow(s, period, maxAbs) {
+  const pct = s.perf?.[period];
+  const dir = pct == null ? '' : (pct >= 0 ? 'up' : 'down');
+  const pctStr = pct == null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+  // Bar width: 0→48% of the half-side
+  const barW = pct == null ? 0 : Math.min(Math.abs(pct) / maxAbs * 48, 48).toFixed(1);
+
+  const priceStr = s.price != null ? `$${s.price.toFixed(2)}` : '';
+  const chgStr = s.changePct != null
+    ? `<span class="${s.changePct >= 0 ? 'up' : 'down'}">${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(2)}%</span>`
+    : '';
+
+  return `
+    <div class="sector-row"
+         onmouseenter="_scheduleSectorHover(this,'${s.symbol}','${s.name.replace(/'/g, '&#39;')}')"
+         onmouseleave="_clearSectorHover()">
+      <div class="sector-row-name">
+        <span class="sector-emoji">${s.emoji}</span>
+        <span class="sector-ticker">${s.symbol}</span>
+        <span class="sector-label">${s.name}</span>
+      </div>
+      <div class="sector-bar-container">
+        <div class="sector-bar-neg-half">
+          ${dir === 'down' ? `<div class="sector-bar neg" style="width:${barW}%"></div>` : ''}
+        </div>
+        <div class="sector-bar-center-line"></div>
+        <div class="sector-bar-pos-half">
+          ${dir === 'up' ? `<div class="sector-bar pos" style="width:${barW}%"></div>` : ''}
+        </div>
+      </div>
+      <div class="sector-row-pct ${dir}">${pctStr}</div>
+    </div>`;
+}
+
+// ── Sector hover popup (news) ──────────────────────────────────
+function _scheduleSectorHover(el, symbol, name) {
+  clearTimeout(_sectorHoverTimer);
+  _sectorHoverTimer = setTimeout(() => _showSectorPopup(el, symbol, name), 500);
+}
+
+function _clearSectorHover() {
+  clearTimeout(_sectorHoverTimer);
+  _sectorHoverTimer = setTimeout(() => {
+    const p = document.getElementById('sector-news-popup');
+    if (p) p.classList.remove('snp-active');
+  }, 200);
+}
+
+async function _showSectorPopup(anchorEl, symbol, name) {
+  let popup = document.getElementById('sector-news-popup');
+  if (!popup) {
+    popup = document.createElement('div');
+    popup.id = 'sector-news-popup';
+    popup.className = 'sector-news-popup';
+    popup.onmouseenter = () => clearTimeout(_sectorHoverTimer);
+    popup.onmouseleave = () => _clearSectorHover();
+    document.body.appendChild(popup);
+  }
+
+  // Position popup
+  const rect = anchorEl.getBoundingClientRect();
+  const top = Math.min(rect.top + window.scrollY, window.innerHeight + window.scrollY - 340);
+  const left = Math.min(rect.right + 14, window.innerWidth - 380);
+  popup.style.top = `${top}px`;
+  popup.style.left = `${left}px`;
+
+  // Find sector data for quick stats
+  const sec = _sectorsData?.find(s => s.symbol === symbol);
+  const priceStr = sec?.price != null ? `$${sec.price.toFixed(2)}` : '';
+  const chgStr = sec?.changePct != null
+    ? `<span style="color:var(--${sec.changePct >= 0 ? 'green' : 'red'})">${sec.changePct >= 0 ? '+' : ''}${sec.changePct.toFixed(2)}%</span>`
+    : '';
+  const perfRows = sec?.perf ? ['1D','1W','1M','YTD','1Y'].map(p =>
+    `<span class="snp-perf-item"><span class="snp-perf-label">${p}</span><span class="snp-perf-val ${(sec.perf[p] ?? 0) >= 0 ? 'up' : 'down'}">${sec.perf[p] != null ? (sec.perf[p] >= 0 ? '+' : '') + sec.perf[p].toFixed(2) + '%' : '—'}</span></span>`
+  ).join('') : '';
+
+  popup.innerHTML = `
+    <div class="snp-header">
+      <div class="snp-title"><span class="snp-symbol">${symbol}</span> ${name}</div>
+      <div class="snp-price">${priceStr} ${chgStr}</div>
+    </div>
+    ${perfRows ? `<div class="snp-perf-row">${perfRows}</div>` : ''}
+    <div class="snp-news-list" id="snp-news-${symbol}"><div class="snp-loading">Loading news…</div></div>`;
+  popup.classList.add('snp-active');
+
+  // Lazy-load news
+  try {
+    const news = await api('GET', `/stock/${symbol}/news`);
+    const nl = document.getElementById(`snp-news-${symbol}`);
+    if (!nl || !popup.classList.contains('snp-active')) return;
+    nl.innerHTML = news.length
+      ? news.slice(0, 6).map(n => `
+          <div class="snp-news-item">
+            <a href="${n.link}" target="_blank" rel="noopener">${n.title}</a>
+            <span class="snp-news-meta">${n.source || ''}</span>
+          </div>`).join('')
+      : '<div class="snp-loading">No news found</div>';
+  } catch {
+    const nl = document.getElementById(`snp-news-${symbol}`);
+    if (nl) nl.innerHTML = '<div class="snp-loading">News unavailable</div>';
+  }
+}
 
 /* ─── BOOT ────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', init);

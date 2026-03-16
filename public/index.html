@@ -19,6 +19,9 @@
     <li class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
       <span class="nav-icon">⊞</span> Stock Dashboard
     </li>
+    <li class="nav-item" data-view="sectors" onclick="navigate('sectors')">
+      <span class="nav-icon">📊</span> Market Sectors
+    </li>
     <li class="nav-item" data-view="crypto" onclick="navigate('crypto')">
       <span class="nav-icon">₿</span> Crypto Dashboard
     </li>
@@ -103,6 +106,27 @@
 
     <!-- Latest News below dashboard -->
     <div id="dashboard-news" class="dashboard-news-section"></div>
+  </section>
+
+  <!-- MARKET SECTORS VIEW -->
+  <section id="sectors-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">📊 Market Sector Trends</h1>
+        <p class="view-subtitle" id="sectors-subtitle">38 sectors · Loading…</p>
+      </div>
+      <div class="header-actions">
+        <div class="sector-period-toggle" id="sector-period-toggle">
+          <button class="sector-period-btn active" data-period="1D" onclick="setSectorPeriod('1D')">1D</button>
+          <button class="sector-period-btn" data-period="1W" onclick="setSectorPeriod('1W')">1W</button>
+          <button class="sector-period-btn" data-period="1M" onclick="setSectorPeriod('1M')">1M</button>
+          <button class="sector-period-btn" data-period="YTD" onclick="setSectorPeriod('YTD')">YTD</button>
+          <button class="sector-period-btn" data-period="1Y" onclick="setSectorPeriod('1Y')">1Y</button>
+        </div>
+        <button class="btn-secondary" onclick="refreshSectors()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="sectors-grid" class="sectors-grid"></div>
   </section>
 
   <!-- CRYPTO DASHBOARD VIEW -->

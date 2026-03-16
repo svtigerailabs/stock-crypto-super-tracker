@@ -60,6 +60,15 @@ async function ensureCrumb() {
   }
 }
 
+// ── Helpers ──
+function fmtMktCap(n) {
+  if (!n || typeof n !== 'number') return null;
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`;
+  return `$${n.toLocaleString()}`;
+}
+
 // ── Stock quote (v8 chart — no auth needed) ──
 async function yfQuote(symbol) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d&includePrePost=true`;
@@ -276,6 +285,8 @@ async function yfProfile(symbol) {
             const cur = meta.regularMarketPrice;
             if (prev && cur) perfResults[label] = ((cur - prev) / prev) * 100;
             else perfResults[label] = null;
+            // Grab marketCap from chart meta as fallback (available in some responses)
+            if (!result.marketCap && meta.marketCap) result.marketCap = fmtMktCap(meta.marketCap);
           }
         }
       } catch { perfResults[label] = null; }
@@ -283,9 +294,124 @@ async function yfProfile(symbol) {
     result._perf = perfResults;
   } catch { /* skip */ }
 
+  // 5) marketCap fallback: try crumb-free quoteSummary if still missing
+  if (!result.marketCap) {
+    try {
+      const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryDetail,price&formatted=true`;
+      const r = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(5000) });
+      if (r.ok) {
+        const j = await r.json();
+        const r2 = j.quoteSummary?.result?.[0] || {};
+        const mc = r2.price?.marketCap?.fmt || r2.summaryDetail?.marketCap?.fmt || null;
+        if (mc) result.marketCap = mc;
+        else {
+          const mcRaw = r2.price?.marketCap?.raw || r2.summaryDetail?.marketCap?.raw;
+          if (mcRaw) result.marketCap = fmtMktCap(mcRaw);
+        }
+      }
+    } catch { /* skip */ }
+  }
+
   result._fetchedAt = Date.now();
   profileCache[symbol] = result;
   return result;
+}
+
+// ── Market Sector ETFs ──
+const SECTOR_ETFS = [
+  // US Equity Sectors (11)
+  { symbol: 'XLK',     name: 'Technology',          group: 'US Sectors',        emoji: '💻' },
+  { symbol: 'XLF',     name: 'Financials',           group: 'US Sectors',        emoji: '🏦' },
+  { symbol: 'XLV',     name: 'Health Care',          group: 'US Sectors',        emoji: '⚕️' },
+  { symbol: 'XLY',     name: 'Consumer Discret.',    group: 'US Sectors',        emoji: '🛍️' },
+  { symbol: 'XLP',     name: 'Consumer Staples',     group: 'US Sectors',        emoji: '🛒' },
+  { symbol: 'XLE',     name: 'Energy',               group: 'US Sectors',        emoji: '⛽' },
+  { symbol: 'XLI',     name: 'Industrials',          group: 'US Sectors',        emoji: '🏭' },
+  { symbol: 'XLB',     name: 'Materials',            group: 'US Sectors',        emoji: '🪨' },
+  { symbol: 'XLRE',    name: 'Real Estate',          group: 'US Sectors',        emoji: '🏢' },
+  { symbol: 'XLU',     name: 'Utilities',            group: 'US Sectors',        emoji: '💡' },
+  { symbol: 'XLC',     name: 'Comm. Services',       group: 'US Sectors',        emoji: '📡' },
+  // US Market Style (7)
+  { symbol: 'SPY',     name: 'S&P 500 Blend',        group: 'US Market Style',   emoji: '🇺🇸' },
+  { symbol: 'IVW',     name: 'S&P 500 Growth',       group: 'US Market Style',   emoji: '📈' },
+  { symbol: 'IVE',     name: 'S&P 500 Value',        group: 'US Market Style',   emoji: '💎' },
+  { symbol: 'IJH',     name: 'Mid Cap',              group: 'US Market Style',   emoji: '🔵' },
+  { symbol: 'IJR',     name: 'Small Cap',            group: 'US Market Style',   emoji: '🔴' },
+  { symbol: 'QQQ',     name: 'Nasdaq 100',           group: 'US Market Style',   emoji: '💻' },
+  { symbol: 'DIA',     name: 'Dow 30',               group: 'US Market Style',   emoji: '🏛️' },
+  // International (8)
+  { symbol: 'EFA',     name: 'Dev. Mkts (EAFE)',     group: 'International',     emoji: '🌍' },
+  { symbol: 'EEM',     name: 'Emerging Mkts',        group: 'International',     emoji: '🌏' },
+  { symbol: 'VEA',     name: 'Dev. ex-US (Vang.)',   group: 'International',     emoji: '🌐' },
+  { symbol: 'FXI',     name: 'China Large Cap',      group: 'International',     emoji: '🇨🇳' },
+  { symbol: 'EWJ',     name: 'Japan',                group: 'International',     emoji: '🇯🇵' },
+  { symbol: 'EWG',     name: 'Germany',              group: 'International',     emoji: '🇩🇪' },
+  { symbol: 'EWZ',     name: 'Brazil',               group: 'International',     emoji: '🇧🇷' },
+  { symbol: 'EWT',     name: 'Taiwan',               group: 'International',     emoji: '🇹🇼' },
+  // Commodities & Alternatives (5)
+  { symbol: 'GLD',     name: 'Gold',                 group: 'Commodities & Alts', emoji: '🥇' },
+  { symbol: 'SLV',     name: 'Silver',               group: 'Commodities & Alts', emoji: '🥈' },
+  { symbol: 'USO',     name: 'Oil (WTI)',             group: 'Commodities & Alts', emoji: '🛢️' },
+  { symbol: 'PDBC',    name: 'Broad Commodities',    group: 'Commodities & Alts', emoji: '📦' },
+  { symbol: 'BTC-USD', name: 'Bitcoin',              group: 'Commodities & Alts', emoji: '₿' },
+  // Fixed Income (4)
+  { symbol: 'TLT',     name: 'Long Bond (20Y+)',     group: 'Fixed Income',      emoji: '📋' },
+  { symbol: 'IEF',     name: 'Mid Bond (7-10Y)',     group: 'Fixed Income',      emoji: '📋' },
+  { symbol: 'HYG',     name: 'High Yield Corp.',     group: 'Fixed Income',      emoji: '📋' },
+  { symbol: 'LQD',     name: 'Inv. Grade Corp.',     group: 'Fixed Income',      emoji: '📋' },
+  // Specialty (5)
+  { symbol: 'VNQ',     name: 'US REITs',             group: 'Specialty',         emoji: '🏘️' },
+  { symbol: 'IBB',     name: 'Biotech',              group: 'Specialty',         emoji: '🧬' },
+  { symbol: 'ARKK',    name: 'Disruptive Innovation',group: 'Specialty',         emoji: '🚀' },
+  { symbol: 'GDX',     name: 'Gold Miners',          group: 'Specialty',         emoji: '⛏️' },
+  { symbol: 'KWEB',    name: 'China Internet',       group: 'Specialty',         emoji: '🌐' },
+];
+
+const sectorCache = { data: null, fetchedAt: 0 };
+const SECTOR_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+async function fetchOneSectorPerf(etf) {
+  const ranges = { '1D': '1d', '1W': '5d', '1M': '1mo', 'YTD': 'ytd', '1Y': '1y' };
+  const perf = {};
+  let price = null, change = null, changePct = null;
+  for (const [label, range] of Object.entries(ranges)) {
+    try {
+      const interval = range === '1d' ? '5m' : '1d';
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(etf.symbol)}?interval=${interval}&range=${range}`;
+      const r = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
+      if (r.ok) {
+        const j = await r.json();
+        const meta = j.chart?.result?.[0]?.meta;
+        if (meta) {
+          const prev = meta.chartPreviousClose || meta.previousClose;
+          const cur = meta.regularMarketPrice;
+          if (prev && cur) {
+            perf[label] = +((cur - prev) / prev * 100).toFixed(2);
+            if (label === '1D') { price = cur; change = +(cur - prev).toFixed(2); changePct = perf[label]; }
+          }
+        }
+      }
+    } catch { perf[label] = null; }
+  }
+  return { ...etf, perf, price, change, changePct };
+}
+
+async function fetchSectorData() {
+  if (sectorCache.data && (Date.now() - sectorCache.fetchedAt) < SECTOR_CACHE_TTL) {
+    return sectorCache.data;
+  }
+  // Batch in groups of 8 to avoid rate-limit
+  const BATCH = 8;
+  const results = [];
+  for (let i = 0; i < SECTOR_ETFS.length; i += BATCH) {
+    const batch = SECTOR_ETFS.slice(i, i + BATCH);
+    const batchRes = await Promise.all(batch.map(fetchOneSectorPerf));
+    results.push(...batchRes);
+    if (i + BATCH < SECTOR_ETFS.length) await new Promise(r => setTimeout(r, 200));
+  }
+  sectorCache.data = results;
+  sectorCache.fetchedAt = Date.now();
+  return results;
 }
 
 // ── Market Index (Dow, S&P, Nasdaq, Gold, BTC) ──
@@ -903,6 +1029,11 @@ app.get('/api/crypto/news', async (req, res) => {
 
 app.get('/api/market-index', async (req, res) => {
   try { res.json(await fetchMarketIndex()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/sectors', async (req, res) => {
+  try { res.json(await fetchSectorData()); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
