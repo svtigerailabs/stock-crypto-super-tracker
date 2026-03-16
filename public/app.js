@@ -387,15 +387,46 @@ function showIndexModal(symbol, name) {
         <div class="index-modal-chart-wrap">
           <div id="index-modal-chart" class="index-modal-chart"></div>
         </div>
+        <div class="index-modal-detail-grid" id="index-modal-detail"></div>
       </div>`;
     modal.addEventListener('click', e => { if (e.target === modal) closeIndexModal(); });
     document.body.appendChild(modal);
   }
   document.getElementById('index-modal-name').textContent = name;
   document.getElementById('index-modal-sym').textContent = symbol;
+  document.getElementById('index-modal-detail').innerHTML = '';
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+  // Load chart + extra quote data in parallel
   loadIndexModalChart(symbol);
+  loadIndexModalDetails(symbol);
+}
+
+async function loadIndexModalDetails(symbol) {
+  const detailEl = document.getElementById('index-modal-detail');
+  if (!detailEl) return;
+  try {
+    const q = await api('GET', `/stock/${encodeURIComponent(symbol)}`);
+    const fmt = v => v != null ? (v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toFixed(2)) : '—';
+    const fmtVl = v => v ? fmtVol(v) : '—';
+    const ytd = (() => {
+      if (!q.ytdChangePercent) return null;
+      return q.ytdChangePercent;
+    })();
+    const rows = [
+      ['Previous Close', fmt(q.previousClose)],
+      ['Open', fmt(q.open)],
+      ['Day High', fmt(q.high)],
+      ['Day Low', fmt(q.low)],
+      ['52W High', fmt(q.week52High || q.fiftyTwoWeekHigh)],
+      ['52W Low', fmt(q.week52Low || q.fiftyTwoWeekLow)],
+      ['Volume', fmtVl(q.volume)],
+      ['Avg Volume', fmtVl(q.averageVolume || q.avgVolume)],
+    ];
+    detailEl.innerHTML = rows.map(([label, val]) =>
+      `<div class="idx-detail-item"><span class="idx-detail-label">${label}</span><span class="idx-detail-value">${val}</span></div>`
+    ).join('');
+  } catch (e) { /* silently skip if quote fails */ }
 }
 
 function closeIndexModal() {
@@ -449,7 +480,7 @@ async function loadIndexModalChart(symbol) {
       <span class="idx-stat-label">High: ${Math.max(...closes).toFixed(2)}</span>
       <span class="idx-stat-label">Low: ${Math.min(...closes).toFixed(2)}</span>`;
 
-    const W = 560, H = 200;
+    const W = 860, H = 260;
     const min = Math.min(...closes), max = Math.max(...closes);
     const span = max - min || 1;
     const step = W / (closes.length - 1);
@@ -2492,7 +2523,7 @@ function buildCryptoCompactCard(c) {
         <span class="compact-price">${priceStr}</span>
         <span class="compact-change ${dir}">${chg24}</span>
       </div>
-      <div class="crypto-hover-popup" id="crypto-hover-${c.id}"></div>
+      <div class="crypto-hover-popup" id="crypto-hover-${c.id}" onclick="event.stopPropagation()"></div>
     </div>`;
 }
 
@@ -2572,7 +2603,7 @@ function buildCryptoCard(c) {
       </div>
       ${sparkSvg ? `<div class="crypto-sparkline">${sparkSvg}</div>` : ''}
       <div class="crypto-meta"><span>MCap: ${mcap}</span><span>Vol: ${vol}</span></div>
-      <div class="crypto-hover-popup" id="crypto-hover-${c.id}"></div>
+      <div class="crypto-hover-popup" id="crypto-hover-${c.id}" onclick="event.stopPropagation()"></div>
     </div>`;
 }
 
@@ -2596,16 +2627,17 @@ function hideCryptoHover(cardEl) {
 }
 
 function renderCryptoHoverPopup(c, el) {
-  const fmtPct = (v, label) => {
-    if (v == null) return `<div class="hover-stat"><span class="hover-stat-label">${label}</span><span class="hover-stat-value">—</span></div>`;
-    const d = v >= 0 ? 'up' : 'down';
-    return `<div class="hover-stat"><span class="hover-stat-label">${label}</span><span class="hover-stat-value" style="color:var(--${d === 'up' ? 'green' : 'red'})">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span></div>`;
-  };
-  const sparkSvg = buildSparklineSVG(c.sparkline, 360, 60, '#3fb950', '#f85149');
   const priceStr = cryptoPriceFmt(c.price);
   const mcap = c.marketCap ? fmtVol(c.marketCap) : '—';
   const vol = c.volume24h ? fmtVol(c.volume24h) : '—';
   const dir = (c.change24h || 0) >= 0 ? 'up' : 'down';
+  const popupId = `chp-${c.id}`;
+  const POPUP_PERIODS = [
+    { label: '1D', range: '1d', chg: null },
+    { label: '7D', range: '7d', chg: c.change7d },
+    { label: '1M', range: '30d', chg: c.change30d },
+    { label: '1Y', range: '365d', chg: c.change1y },
+  ];
 
   el.innerHTML = `
     <div class="detail-header">
@@ -2621,22 +2653,58 @@ function renderCryptoHoverPopup(c, el) {
         <div class="detail-change ${dir}">${c.change24h != null ? (c.change24h >= 0 ? '+' : '') + c.change24h.toFixed(2) + '%' : '—'} (24h)</div>
       </div>
     </div>
-    ${sparkSvg ? `<div class="hover-sparkline">${sparkSvg}</div>` : ''}
     <div class="perf-bar">
-      ${[['1H', c.change1h], ['24H', c.change24h], ['7D', c.change7d], ['30D', c.change30d], ['~6M', c.change200d], ['1Y', c.change1y]].map(([l, v]) => {
+      ${[['1H', c.change1h], ['24H', c.change24h], ['7D', c.change7d], ['30D', c.change30d], ['1Y', c.change1y]].map(([l, v]) => {
         if (v == null) return '';
         const d = v >= 0 ? 'up' : 'down';
         return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</span></div>`;
       }).join('')}
     </div>
+    <div class="hover-popup-periods" id="${popupId}-periods">
+      ${POPUP_PERIODS.map(p => `<button class="hover-popup-period-btn${p.range === '7d' ? ' active' : ''}" onclick="event.stopPropagation();loadCryptoPopupChart('${c.id}','${p.range}',this,'${popupId}')">${p.label}</button>`).join('')}
+    </div>
+    <div class="hover-popup-chart-wrap" id="${popupId}-chart"><div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading chart…</div></div>
     <div class="hover-stats-grid">
-      <div class="hover-stat"><span class="hover-stat-label">24H High</span><span class="hover-stat-value">${cryptoPriceFmt(c.high24h)}</span></div>
-      <div class="hover-stat"><span class="hover-stat-label">24H Low</span><span class="hover-stat-value">${cryptoPriceFmt(c.low24h)}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">Market Cap</span><span class="hover-stat-value">${mcap}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">Volume 24H</span><span class="hover-stat-value">${vol}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">ATH</span><span class="hover-stat-value">${cryptoPriceFmt(c.ath)}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">ATH Change</span><span class="hover-stat-value" style="color:var(--red)">${c.athChangePercent != null ? c.athChangePercent.toFixed(1) + '%' : '—'}</span></div>
     </div>`;
+  // Auto-load the default 7D chart
+  loadCryptoPopupChart(c.id, '7d', el.querySelector('.hover-popup-period-btn.active'), popupId);
+}
+
+async function loadCryptoPopupChart(id, range, btnEl, popupId) {
+  // Update active button
+  const periodsEl = document.getElementById(popupId + '-periods');
+  if (periodsEl) periodsEl.querySelectorAll('.hover-popup-period-btn').forEach(b => b.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+  const chartEl = document.getElementById(popupId + '-chart');
+  if (!chartEl) return;
+  chartEl.innerHTML = '<div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading…</div>';
+  try {
+    const prices = await api('GET', `/crypto/${id}/chart?range=${range}`);
+    if (!Array.isArray(prices) || prices.length < 2) { chartEl.innerHTML = '<div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">No data</div>'; return; }
+    const W = 360, H = 80;
+    const min = Math.min(...prices), max = Math.max(...prices), span = max - min || 1;
+    const step = W / (prices.length - 1);
+    const toY = v => H - ((v - min) / span) * (H - 8) - 4;
+    const ptStr = prices.map((v, i) => `${(i * step).toFixed(1)},${toY(v).toFixed(1)}`).join(' ');
+    const first = prices[0], last = prices[prices.length - 1];
+    const up = last >= first;
+    const color = up ? '#3fb950' : '#f85149';
+    const fill = up ? '#3fb95018' : '#f8514918';
+    const baseY = toY(first).toFixed(1);
+    chartEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block;background:var(--bg);border-radius:4px">
+      <line x1="0" y1="${baseY}" x2="${W}" y2="${baseY}" stroke="#484f58" stroke-width="1" stroke-dasharray="3,3"/>
+      <path d="M0,${H} L${ptStr} L${W},${H} Z" fill="${fill}"/>
+      <polyline points="${ptStr}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    <div style="font-size:9px;color:var(--text-dim);margin-top:2px;display:flex;justify-content:space-between">
+      <span>${last >= first ? '▲' : '▼'} ${Math.abs(((last-first)/first)*100).toFixed(2)}%</span>
+      <span>${last >= 1 ? '$' + last.toLocaleString('en-US',{maximumFractionDigits:2}) : '$' + last.toFixed(6)}</span>
+    </div>`;
+  } catch (e) { chartEl.innerHTML = '<div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">—</div>'; }
 }
 
 /* ─── CRYPTO EDIT MODE ───────────────────────────────────────── */
