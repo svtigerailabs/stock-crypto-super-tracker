@@ -1821,17 +1821,14 @@ html, body {
 .lcw-table-header-bar { display: none; }
 .lcw-table-chart-label { display: none; }
 
-/* ── Crypto Filter Tabs ── */
-.crypto-filter-tabs {
-  display: flex; gap: 4px; margin-right: 6px;
-}
-.crypto-filter-btn {
+/* ── Crypto Favorite Toggle Button ── */
+.crypto-star-toggle {
   background: transparent; border: 1px solid var(--border); color: var(--text-dim);
-  padding: 5px 11px; border-radius: 6px; cursor: pointer; font-size: 12px;
-  font-weight: 600; font-family: inherit; transition: all .15s;
+  padding: 5px 13px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  font-weight: 600; font-family: inherit; transition: all .15s; margin-right: 6px;
 }
-.crypto-filter-btn:hover { background: var(--card); color: var(--text); }
-.crypto-filter-btn.active { background: rgba(88,166,255,.15); border-color: var(--blue); color: var(--blue); }
+.crypto-star-toggle:hover { background: var(--card); color: #f0c040; border-color: #f0c040; }
+.crypto-star-toggle.active { background: rgba(240,192,64,.15); border-color: #f0c040; color: #f0c040; }
 
 /* ── Crypto Star / Favorite Button ── */
 .crypto-star-btn {

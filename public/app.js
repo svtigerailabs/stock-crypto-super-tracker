@@ -2910,13 +2910,11 @@ async function renderCryptoDashboard() {
   // Apply filter mode
   let visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
   if (state.cryptoFilterMode === 'favorites') {
-    visibleCoins = visibleCoins.filter(c => state.favoriteCryptoIds.includes(c.id));
-  } else if (state.cryptoFilterMode === 'default') {
-    visibleCoins = visibleCoins.filter(c => DEFAULT_CRYPTO_SYMBOLS.includes(c.symbol.toUpperCase()));
-    // Fallback: if no matches (API returned different symbols), show all
-    if (!visibleCoins.length) visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
+    const favs = visibleCoins.filter(c => state.favoriteCryptoIds.includes(c.id));
+    // If no favorites yet, show all with a hint
+    visibleCoins = favs.length ? favs : visibleCoins;
   }
-  // Sort by rank (market ranking order)
+  // 'all' and 'default' both show full list — sort by rank
   visibleCoins = visibleCoins.sort((a, b) => (a.rank || 999) - (b.rank || 999));
   _updateCryptoFilterBtns();
   const mode = state.cryptoViewMode;
@@ -3378,7 +3376,7 @@ function buildCryptoDetailedTable(coins) {
   }).join('');
 
   const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M'],['180d','6M'],['365d','1Y'],['730d','2Y']].map(([p, label]) =>
-    `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="event.stopPropagation();setCryptoChartPeriod('${p}')">${label}</button>`
+    `<button class="chart-period-btn${p === period ? ' active' : ''}" data-period="${p}" onclick="event.stopPropagation();setCryptoChartPeriod('${p}')">${label}</button>`
   ).join('');
 
   return `
@@ -3472,8 +3470,13 @@ function hideStockTableHover(rowEl) {
 function showCryptoTableHover(id, rowEl) {
   const popup = rowEl.querySelector('.crypto-hover-popup');
   if (!popup) return;
-  const rect = rowEl.getBoundingClientRect();
-  popup.style.left = Math.min(rect.left + 40, window.innerWidth - 420) + 'px';
+  // Position popup to the right of the mouse so it doesn't block the star button
+  const popupW = 380;
+  let left = _mouseX + 18;
+  if (left + popupW > window.innerWidth - 8) left = _mouseX - popupW - 10;
+  if (left < 4) left = 4;
+  popup.style.left = left + 'px';
+  popup.style.top = '';   // reset any absolute top override
   popup.classList.add('visible');
   if (popup.dataset.loaded) return;
   popup.dataset.loaded = '1';
@@ -3550,19 +3553,19 @@ function openCryptoDetailModal(id) {
 
 async function setCryptoChartPeriod(period) {
   state.cryptoChartPeriod = period;
-  // Update period button states without re-rendering the whole table
+  // Update period button active state using data-period attribute
   document.querySelectorAll('.lcw-crypto-table .chart-period-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.period === period || b.textContent === period.replace('d','D').replace('365d','1Y').replace('730d','2Y'));
+    b.classList.toggle('active', b.dataset.period === period);
   });
   if (state.cryptoViewMode !== 'detailed') return;
 
-  // Use all coins that are currently visible in the table
+  // Use coins currently visible in the table (matches render filter)
   let visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
-  if (state.cryptoFilterMode === 'favorites') visibleCoins = visibleCoins.filter(c => state.favoriteCryptoIds.includes(c.id));
-  else if (state.cryptoFilterMode === 'default') {
-    const filtered = visibleCoins.filter(c => DEFAULT_CRYPTO_SYMBOLS.includes(c.symbol.toUpperCase()));
-    if (filtered.length) visibleCoins = filtered;
+  if (state.cryptoFilterMode === 'favorites') {
+    const favs = visibleCoins.filter(c => state.favoriteCryptoIds.includes(c.id));
+    if (favs.length) visibleCoins = favs;
   }
+  visibleCoins = visibleCoins.sort((a, b) => (a.rank || 999) - (b.rank || 999));
   if (period === '7d') {
     visibleCoins.forEach(c => {
       const cell = document.getElementById(`crypto-chart-${c.id}`);
@@ -3590,16 +3593,15 @@ async function setCryptoChartPeriod(period) {
     cell.innerHTML = buildSparklineSVG(spark, 130, 32, '#3fb950', '#f85149');
   });
 
-  // Fetch uncached — max 5 coins, 2s between each to respect CoinGecko free-tier rate limits
-  let fetched = 0;
-  const batch = toFetch.slice(0, 5);
-  for (const c of batch) {
+  // Fetch all uncached coins (CryptoCompare is more lenient than CoinGecko)
+  for (let i = 0; i < toFetch.length; i++) {
+    const c = toFetch[i];
     try {
       const prices = await api('GET', `/crypto/${c.id}/chart?range=${period}`);
       if (!Array.isArray(prices) || !prices.length) throw new Error('empty');
       if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
       state.cryptoCharts[c.id][period] = prices;
-      // Compute 6M change from 180d chart data and cache it in coin object
+      // Compute 6M change from 180d chart data
       if (period === '180d' && prices.length >= 2) {
         const change6m = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
         const coinRef = state.cryptoData.find(x => x.id === c.id);
@@ -3611,18 +3613,18 @@ async function setCryptoChartPeriod(period) {
           pctEl.textContent = `${change6m >= 0 ? '+' : ''}${change6m.toFixed(2)}%`;
         }
       }
-      if (state.cryptoChartPeriod !== period) return; // user switched again
+      if (state.cryptoChartPeriod !== period) return; // user switched period
       const cell = document.getElementById(`crypto-chart-${c.id}`);
       if (cell) {
-        const spark = prices.length > 50 ? prices.filter((_,i)=>i%Math.ceil(prices.length/50)===0) : prices;
+        const spark = prices.length > 50 ? prices.filter((_,i2)=>i2%Math.ceil(prices.length/50)===0) : prices;
         cell.innerHTML = buildSparklineSVG(spark, 130, 32, '#3fb950', '#f85149');
       }
-      fetched++;
-    } catch (e) {
+    } catch {
       const cell = document.getElementById(`crypto-chart-${c.id}`);
       if (cell) cell.innerHTML = '<span style="color:var(--text-dim);font-size:9px">—</span>';
     }
-    if (fetched < batch.length) await new Promise(r => setTimeout(r, 2000));
+    // 600ms between requests to stay within CryptoCompare free-tier limits
+    if (i < toFetch.length - 1) await new Promise(r => setTimeout(r, 600));
   }
 }
 
@@ -3638,6 +3640,12 @@ async function refreshCrypto() {
 }
 
 /* ─── CRYPTO FILTER MODE ─────────────────────────────────────── */
+function toggleCryptoFavFilter() {
+  // Toggle between favorites and all
+  const next = state.cryptoFilterMode === 'favorites' ? 'all' : 'favorites';
+  setCryptoFilterMode(next);
+}
+
 function setCryptoFilterMode(mode) {
   state.cryptoFilterMode = mode;
   localStorage.setItem('cryptoFilterMode', mode);
@@ -3646,9 +3654,11 @@ function setCryptoFilterMode(mode) {
 }
 
 function _updateCryptoFilterBtns() {
-  document.querySelectorAll('.crypto-filter-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.mode === state.cryptoFilterMode);
-  });
+  const btn = document.getElementById('crypto-fav-toggle');
+  if (!btn) return;
+  const isFav = state.cryptoFilterMode === 'favorites';
+  btn.textContent = isFav ? '⭐ Favorites' : '☆ All Coins';
+  btn.classList.toggle('active', isFav);
 }
 
 /* ─── CRYPTO FAVORITES (STAR) ────────────────────────────────── */
