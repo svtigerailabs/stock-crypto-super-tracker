@@ -12,8 +12,11 @@
 <!-- ─── SIDEBAR ─────────────────────────────────────────────────── -->
 <nav class="sidebar">
   <div class="sidebar-logo">
-    <span class="logo-icon">📈</span>
-    <span class="logo-text">Stock & Crypto<br><span class="logo-sub">Super Tracker</span></span>
+    <img src="logo.png" alt="Stock & Crypto Super Tracker" class="logo-img" onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex'" />
+    <div id="logo-fallback" style="display:none;align-items:center;gap:8px">
+      <span class="logo-icon">📈</span>
+      <span class="logo-text">Stock & Crypto<br><span class="logo-sub">Super Tracker</span></span>
+    </div>
   </div>
   <ul class="nav-list">
     <li class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
@@ -30,6 +33,9 @@
     </li>
     <li class="nav-item" data-view="screener" onclick="navigate('screener')">
       <span class="nav-icon">🔍</span> Market Screener
+    </li>
+    <li class="nav-item" data-view="tradingview" onclick="navigate('tradingview')">
+      <span class="nav-icon">📉</span> TradingView
     </li>
     <li class="nav-item" data-view="crypto" onclick="navigate('crypto')">
       <span class="nav-icon">₿</span> Crypto Dashboard
@@ -119,24 +125,26 @@
 
   <!-- MARKET SECTORS VIEW -->
   <section id="sectors-view" class="view">
-    <div class="view-header">
-      <div>
-        <h1 class="view-title">📊 Market Sector Trends</h1>
-        <p class="view-subtitle" id="sectors-subtitle">38 sectors · Loading…</p>
-      </div>
-      <div class="header-actions">
-        <div class="sector-period-toggle" id="sector-period-toggle">
-          <button class="sector-period-btn active" data-period="1D" onclick="setSectorPeriod('1D')">1D</button>
-          <button class="sector-period-btn" data-period="1W" onclick="setSectorPeriod('1W')">1W</button>
-          <button class="sector-period-btn" data-period="1M" onclick="setSectorPeriod('1M')">1M</button>
-          <button class="sector-period-btn" data-period="3M" onclick="setSectorPeriod('3M')">3M</button>
-          <button class="sector-period-btn" data-period="YTD" onclick="setSectorPeriod('YTD')">YTD</button>
-          <button class="sector-period-btn" data-period="1Y" onclick="setSectorPeriod('1Y')">1Y</button>
-          <button class="sector-period-btn" data-period="2Y" onclick="setSectorPeriod('2Y')">2Y</button>
-          <button class="sector-period-btn" data-period="5Y" onclick="setSectorPeriod('5Y')">5Y</button>
-          <button class="sector-period-btn" data-period="10Y" onclick="setSectorPeriod('10Y')">10Y</button>
+    <div class="sectors-sticky-header">
+      <div class="view-header" style="margin-bottom:0">
+        <div>
+          <h1 class="view-title">📊 Market Sector Trends</h1>
+          <p class="view-subtitle" id="sectors-subtitle">90 sectors · Loading…</p>
         </div>
-        <button class="btn-secondary" onclick="refreshSectors()">↻ Refresh</button>
+        <div class="header-actions">
+          <div class="sector-period-toggle" id="sector-period-toggle">
+            <button class="sector-period-btn active" data-period="1D" onclick="setSectorPeriod('1D')">1D</button>
+            <button class="sector-period-btn" data-period="1W" onclick="setSectorPeriod('1W')">1W</button>
+            <button class="sector-period-btn" data-period="1M" onclick="setSectorPeriod('1M')">1M</button>
+            <button class="sector-period-btn" data-period="3M" onclick="setSectorPeriod('3M')">3M</button>
+            <button class="sector-period-btn" data-period="YTD" onclick="setSectorPeriod('YTD')">YTD</button>
+            <button class="sector-period-btn" data-period="1Y" onclick="setSectorPeriod('1Y')">1Y</button>
+            <button class="sector-period-btn" data-period="2Y" onclick="setSectorPeriod('2Y')">2Y</button>
+            <button class="sector-period-btn" data-period="5Y" onclick="setSectorPeriod('5Y')">5Y</button>
+            <button class="sector-period-btn" data-period="10Y" onclick="setSectorPeriod('10Y')">10Y</button>
+          </div>
+          <button class="btn-secondary" onclick="refreshSectors()">↻ Refresh</button>
+        </div>
       </div>
     </div>
     <div id="sectors-grid" class="sectors-grid"></div>
@@ -157,9 +165,22 @@
   <section id="calendar-view" class="view">
     <div class="view-header">
       <div>
-        <h1 class="view-title">📅 Market Calendar</h1>
-        <p class="view-subtitle">Economic events, earnings &amp; central bank decisions — powered by TradingView</p>
+        <h1 class="view-title">📅 US Market Calendar</h1>
+        <p class="view-subtitle">US economic events, earnings &amp; Fed decisions — powered by TradingView</p>
       </div>
+      <div class="header-actions">
+        <div class="cal-period-tabs" id="cal-period-tabs">
+          <button class="cal-period-btn active" data-range="week" onclick="setCalendarPeriod('week')">📅 This Week</button>
+          <button class="cal-period-btn" data-range="month" onclick="setCalendarPeriod('month')">🗓️ This Month</button>
+          <button class="cal-period-btn" data-range="quarter" onclick="setCalendarPeriod('quarter')">📆 This Quarter</button>
+        </div>
+      </div>
+    </div>
+    <div class="cal-legend">
+      <span class="cal-legend-item high">🔴 High Impact</span>
+      <span class="cal-legend-item medium">🟡 Medium Impact</span>
+      <span class="cal-legend-item low">🟢 Low Impact</span>
+      <span class="cal-legend-item tip">Hover over events for details</span>
     </div>
     <div class="tv-widget-container" id="tv-calendar-container"></div>
   </section>
@@ -169,10 +190,72 @@
     <div class="view-header">
       <div>
         <h1 class="view-title">🔍 Market Screener</h1>
-        <p class="view-subtitle">Filter and discover stocks by fundamentals &amp; technicals — powered by TradingView</p>
+        <p class="view-subtitle">Filter and discover US stocks by fundamentals &amp; technicals</p>
+      </div>
+    </div>
+    <!-- Quick filter bar -->
+    <div class="screener-controls">
+      <div class="screener-search-wrap">
+        <input type="text" id="screener-symbol-input" class="form-input screener-symbol-input" placeholder="🔍 Search symbol (e.g. TSLA, AAPL)…" onkeydown="if(event.key==='Enter')screenerSearchSymbol()" />
+        <button class="btn-secondary" onclick="screenerSearchSymbol()">Go</button>
+      </div>
+      <div class="screener-filters">
+        <select class="form-select screener-select" id="screener-market" onchange="initTVScreener()">
+          <option value="america">🇺🇸 US Stocks</option>
+          <option value="nasdaq">🔵 Nasdaq</option>
+          <option value="nyse">⚪ NYSE</option>
+          <option value="crypto">₿ Crypto</option>
+          <option value="forex">💱 Forex</option>
+        </select>
+        <select class="form-select screener-select" id="screener-column" onchange="initTVScreener()">
+          <option value="overview">📊 Overview</option>
+          <option value="performance">📈 Performance</option>
+          <option value="valuation">💲 Valuation</option>
+          <option value="dividends">💰 Dividends</option>
+          <option value="technical_analysis">📉 Technicals</option>
+        </select>
+        <select class="form-select screener-select" id="screener-screen" onchange="initTVScreener()">
+          <option value="general">All Stocks</option>
+          <option value="most_capitalized">Top Market Cap</option>
+          <option value="volume_leaders">Volume Leaders</option>
+          <option value="top_gainers">Top Gainers</option>
+          <option value="top_losers">Top Losers</option>
+          <option value="ath">All-Time Highs</option>
+          <option value="atl">All-Time Lows</option>
+          <option value="new_highs">52W Highs</option>
+          <option value="new_lows">52W Lows</option>
+          <option value="high_dividend">High Dividend</option>
+        </select>
       </div>
     </div>
     <div class="tv-widget-container" id="tv-screener-container"></div>
+  </section>
+
+  <!-- TRADINGVIEW VIEW -->
+  <section id="tradingview-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">📉 TradingView Chart</h1>
+        <p class="view-subtitle">Advanced charting — search any symbol, sign in to TradingView for full features</p>
+      </div>
+      <div class="header-actions">
+        <a href="https://www.tradingview.com" target="_blank" rel="noopener" class="btn-secondary">🔗 Open TradingView</a>
+      </div>
+    </div>
+    <div class="tv-symbol-bar">
+      <input type="text" id="tv-symbol-input" class="form-input tv-symbol-input" placeholder="Enter symbol (e.g. TSLA, AAPL, BTC)…" value="NASDAQ:AAPL" onkeydown="if(event.key==='Enter')loadTVChart()" />
+      <button class="btn-secondary" onclick="loadTVChart()">Load Chart</button>
+      <div class="tv-quick-symbols">
+        <button class="tv-quick-btn" onclick="setTVSymbol('NASDAQ:AAPL')">AAPL</button>
+        <button class="tv-quick-btn" onclick="setTVSymbol('NASDAQ:TSLA')">TSLA</button>
+        <button class="tv-quick-btn" onclick="setTVSymbol('NASDAQ:NVDA')">NVDA</button>
+        <button class="tv-quick-btn" onclick="setTVSymbol('NASDAQ:MSFT')">MSFT</button>
+        <button class="tv-quick-btn" onclick="setTVSymbol('NYSE:SPY')">SPY</button>
+        <button class="tv-quick-btn" onclick="setTVSymbol('BINANCE:BTCUSDT')">BTC</button>
+        <button class="tv-quick-btn" onclick="setTVSymbol('BINANCE:ETHUSDT')">ETH</button>
+      </div>
+    </div>
+    <div class="tv-widget-container tv-chart-container" id="tv-tradingview-container"></div>
   </section>
 
   <!-- CRYPTO DASHBOARD VIEW -->

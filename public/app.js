@@ -162,6 +162,7 @@ function navigate(view) {
     case 'maps': initTVMaps(); break;
     case 'calendar': initTVCalendar(); break;
     case 'screener': initTVScreener(); break;
+    case 'tradingview': initTVTradingView(); break;
     case 'crypto': renderCryptoDashboard(); break;
     case 'settings': renderSettings(); break;
   }
@@ -640,7 +641,7 @@ function buildStockCardRich(symbol) {
   }).join('');
 
   return `
-    <div class="rich-card ${dir}" onclick="showNewsModal('${symbol}')"
+    <div class="rich-card ${dir}" onclick="showStockDetailPopup('${symbol}')"
          onmouseenter="_scheduleShow(this,()=>{lazyLoadHoverData('${symbol}');positionStockPopup(this);this.classList.add('popup-open');})"
          onmouseleave="_scheduleHide(this,()=>this.classList.remove('popup-open'))">
       <div class="rich-card-head">
@@ -680,10 +681,14 @@ function calc52wPct(price, low, high) {
 /* ─── STOCK DETAILED TABLE (Dashboard 3 — livecoinwatch style) ── */
 function buildStockDetailedTable(symbols) {
   const period = state.stockChartPeriod || '1mo';
-  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y']].map(([p, label]) =>
+  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y']].map(([p, label]) =>
     `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="setStockChartPeriod('${p}')">${label}</button>`
   ).join('');
   return `
+    <div class="lcw-table-header-bar">
+      <span class="lcw-table-chart-label">Chart Period:</span>
+      <span class="chart-period-toggle">${periodBtns}</span>
+    </div>
     <div class="lcw-table lcw-stock">
       <div class="lcw-header">
         <div class="lcw-col lcw-rank">#</div>
@@ -697,7 +702,7 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
-        <div class="lcw-col lcw-chart">Chart <span class="chart-period-toggle">${periodBtns}</span></div>
+        <div class="lcw-col lcw-chart">Chart</div>
         <div class="lcw-col lcw-mcap">Mkt Cap</div>
         <div class="lcw-col lcw-vol">Volume</div>
       </div>
@@ -836,7 +841,7 @@ function buildStockCard(symbol) {
   const dir = typeof chg === 'number' ? (chg >= 0 ? 'up' : 'down') : '';
 
   return `
-  <div class="stock-card ${dir}" id="card-${symbol}" onclick="showNewsModal('${symbol}')"
+  <div class="stock-card ${dir}" id="card-${symbol}" onclick="showStockDetailPopup('${symbol}')"
        onmouseenter="_scheduleShow(this,()=>{lazyLoadHoverData('${symbol}');positionStockPopup(this);this.classList.add('popup-open');})"
        onmouseleave="_scheduleHide(this,()=>this.classList.remove('popup-open'))">
     <div class="stock-card-compact">
@@ -2019,12 +2024,22 @@ async function submitAlert() {
       customName: state.selectedSymbol.name,
       conditions, notificationMethods, repeatAlert,
     });
+    const savedSym = state.selectedSymbol.symbol;
     created.forEach(a => state.alerts.push(a));
-    state.stocks[state.selectedSymbol.symbol] = state.stocks[state.selectedSymbol.symbol] || {};
-    Object.assign(state.stocks[state.selectedSymbol.symbol], { price: created[0]?.basePrice, name: created[0]?.name });
-    hideAddAlertModal();
-    navigate('dashboard');
-    showSuccessToast(`Created ${created.length} alert(s) for ${state.selectedSymbol.symbol}`);
+    state.stocks[savedSym] = state.stocks[savedSym] || {};
+    Object.assign(state.stocks[savedSym], { price: created[0]?.basePrice, name: created[0]?.name });
+    renderAll(); // re-render dashboard in background without closing modal
+    showSuccessToast(`Created ${created.length} alert(s) for ${savedSym}`);
+    // Show inline success & reset form so user can add another
+    const fb = document.getElementById('modal-error');
+    if (fb) {
+      fb.className = 'modal-success';
+      fb.textContent = `✅ Alert(s) created for ${savedSym}! Search another symbol to add more.`;
+      fb.style.display = 'block';
+      setTimeout(() => { fb.style.display = 'none'; fb.className = 'modal-error'; }, 4000);
+    }
+    resetAlertForm();
+    document.getElementById('symbol-search').focus();
   } catch (e) {
     showModalError(e.message);
     btn.disabled = false; btn.textContent = 'Create Alert(s)';
@@ -2087,7 +2102,7 @@ function hideNewsModal() {
   document.body.style.overflow = '';
 }
 
-/* ─── STOCK DETAIL POPUP (Detailed Table row click) ──────────── */
+/* ─── STOCK DETAIL POPUP (card click / table row click) ──────── */
 async function showStockDetailPopup(symbol) {
   const modal = document.getElementById('stock-detail-modal');
   const titleEl = document.getElementById('stock-detail-modal-title');
@@ -2107,12 +2122,36 @@ async function showStockDetailPopup(symbol) {
     if (!state.profiles[symbol]) {
       state.profiles[symbol] = await api('GET', `/stock/${symbol}/profile`);
     }
-    // Render the hover popup content into a temp div then move to modal
+
+    // Interactive chart section at the top
+    const chartRanges = [['1d','1D'],['5d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y'],['5y','5Y']];
+    const chartHtml = `
+      <div class="chart-section" style="margin-bottom:12px;padding:4px">
+        <div class="chart-period-buttons" id="chart-periods-${symbol}" style="justify-content:flex-start">
+          ${chartRanges.map(([r,l]) => `<button class="chart-period-btn${r==='1mo'?' active':''}" data-range="${r}">${l}</button>`).join('')}
+        </div>
+        <div class="chart-container" id="chart-${symbol}"><div class="chart-loading">Loading chart…</div></div>
+        <div class="chart-stats" id="chart-stats-${symbol}"></div>
+      </div>`;
+
+    // Profile stats / news / alerts content
     const tmp = document.createElement('div');
     tmp.className = 'stock-detail-popup-content';
     renderHoverPopup(symbol, tmp);
-    bodyEl.innerHTML = '';
+    tmp.querySelector('.hover-sparkline')?.remove(); // replaced by interactive chart
+
+    bodyEl.innerHTML = chartHtml;
     bodyEl.appendChild(tmp);
+
+    // Initialize chart + wire period buttons
+    loadChart(symbol, '1mo');
+    document.querySelectorAll(`#chart-periods-${symbol} .chart-period-btn`).forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll(`#chart-periods-${symbol} .chart-period-btn`).forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadChart(symbol, btn.dataset.range);
+      });
+    });
   } catch (e) {
     bodyEl.innerHTML = `<div class="hover-loading" style="padding:24px">Failed to load: ${e.message}</div>`;
   }
@@ -2911,6 +2950,7 @@ function buildCryptoCard(c) {
 
   return `
     <div class="crypto-card ${dir}"
+         onclick="showCryptoDetailPopup('${c.id}')"
          onmouseenter="_scheduleShow(this,()=>showCryptoHover('${c.id}',this))"
          onmouseleave="_scheduleHide(this,()=>hideCryptoHover(this))">
       ${deleteBtn}
@@ -3036,6 +3076,73 @@ async function loadCryptoPopupChart(id, range, btnEl, popupId) {
       <span>${last >= 1 ? '$' + last.toLocaleString('en-US',{maximumFractionDigits:2}) : '$' + last.toFixed(6)}</span>
     </div>`;
   } catch (e) { chartEl.innerHTML = '<div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">—</div>'; }
+}
+
+/* ─── CRYPTO DETAIL POPUP (click crypto card) ────────────────── */
+async function showCryptoDetailPopup(id) {
+  const modal = document.getElementById('stock-detail-modal');
+  const titleEl = document.getElementById('stock-detail-modal-title');
+  const bodyEl = document.getElementById('stock-detail-modal-body');
+  if (!modal) return;
+  const c = state.cryptoData.find(x => x.id === id);
+  if (!c) return;
+
+  titleEl.textContent = `₿ ${c.symbol} — ${c.name} Full Details`;
+  bodyEl.innerHTML = '<div class="hover-loading" style="padding:24px">Loading crypto details…</div>';
+  modal.classList.add('active');
+  document.body.style.overflow = 'hidden';
+
+  const priceStr = cryptoPriceFmt(c.price);
+  const mcap = c.marketCap ? fmtVol(c.marketCap) : '—';
+  const vol = c.volume24h ? fmtVol(c.volume24h) : '—';
+  const dir = (c.change24h || 0) >= 0 ? 'up' : 'down';
+  const chg = c.change24h != null ? `${c.change24h >= 0 ? '+' : ''}${c.change24h.toFixed(2)}%` : '—';
+
+  // Build chart section using CryptoCompare data
+  const popupId = `cpopup-${id}`;
+  const PERIODS = [
+    { label: '1D', range: '1d' }, { label: '7D', range: '7d' },
+    { label: '1M', range: '30d' }, { label: '3M', range: '90d' },
+    { label: '1Y', range: '365d' },
+  ];
+
+  bodyEl.innerHTML = `
+    <div class="detail-header" style="padding:16px 20px 0">
+      <div style="display:flex;align-items:center;gap:12px">
+        <img src="${c.image}" style="width:40px;height:40px;border-radius:50%" onerror="this.style.display='none'" />
+        <div>
+          <div class="detail-symbol" style="font-size:22px">${c.symbol}</div>
+          <div class="detail-name">${c.name} · Rank #${c.rank || '—'}</div>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div class="detail-price" style="font-size:22px">${priceStr}</div>
+        <div class="detail-change ${dir}" style="font-size:14px">${chg} (24h)</div>
+      </div>
+    </div>
+    <div class="perf-bar" style="padding:8px 20px">
+      ${[['1H', c.change1h], ['24H', c.change24h], ['7D', c.change7d], ['30D', c.change30d], ['1Y', c.change1y]].map(([l, v]) => {
+        if (v == null) return '';
+        const d = v >= 0 ? 'up' : 'down';
+        return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span></div>`;
+      }).join('')}
+    </div>
+    <div class="chart-period-buttons" id="${popupId}-periods" style="padding:0 20px 8px">
+      ${PERIODS.map(p => `<button class="chart-period-btn${p.range === '7d' ? ' active' : ''}" onclick="event.stopPropagation();loadCryptoPopupChart('${id}','${p.range}',this,'${popupId}')">${p.label}</button>`).join('')}
+    </div>
+    <div class="hover-popup-chart-wrap" id="${popupId}-chart" style="margin:0 20px 8px;height:120px">
+      <div style="height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading chart…</div>
+    </div>
+    <div class="hover-stats-grid" style="margin:0 20px 12px">
+      <div class="hover-stat"><span class="hover-stat-label">Market Cap</span><span class="hover-stat-value">${mcap}</span></div>
+      <div class="hover-stat"><span class="hover-stat-label">Volume 24H</span><span class="hover-stat-value">${vol}</span></div>
+      <div class="hover-stat"><span class="hover-stat-label">ATH</span><span class="hover-stat-value">${cryptoPriceFmt(c.ath)}</span></div>
+      <div class="hover-stat"><span class="hover-stat-label">ATH Change</span><span class="hover-stat-value" style="color:var(--red)">${c.athChangePercent != null ? c.athChangePercent.toFixed(1) + '%' : '—'}</span></div>
+      <div class="hover-stat"><span class="hover-stat-label">52W High</span><span class="hover-stat-value">${c.high52w ? cryptoPriceFmt(c.high52w) : '—'}</span></div>
+      <div class="hover-stat"><span class="hover-stat-label">Circulating</span><span class="hover-stat-value">${c.circulatingSupply ? fmtVol(c.circulatingSupply) : '—'}</span></div>
+    </div>`;
+  // Load default 7D chart
+  loadCryptoPopupChart(id, '7d', bodyEl.querySelector('.chart-period-btn.active'), popupId);
 }
 
 /* ─── CRYPTO EDIT MODE ───────────────────────────────────────── */
@@ -3466,8 +3573,26 @@ document.addEventListener('keydown', e => {
 
 /* ─── MARKET SECTOR TRENDS ────────────────────────────────────── */
 let _sectorsData = null;
+let _sectorAvailable = {};
 let _sectorPeriod = '1D';
 let _sectorHoverTimer = null;
+let _mouseX = 0, _mouseY = 0;
+document.addEventListener('mousemove', e => { _mouseX = e.clientX; _mouseY = e.clientY; });
+
+// Client-side sector cache (localStorage, 12h TTL)
+const SECTOR_CLIENT_TTL = 12 * 60 * 60 * 1000;
+function _loadSectorCache() {
+  try {
+    const raw = localStorage.getItem('sectorDataCache');
+    if (!raw) return null;
+    const { data, available, at } = JSON.parse(raw);
+    if (Date.now() - at > SECTOR_CLIENT_TTL) return null;
+    return { data, available };
+  } catch { return null; }
+}
+function _saveSectorCache(data, available) {
+  try { localStorage.setItem('sectorDataCache', JSON.stringify({ data, available, at: Date.now() })); } catch {}
+}
 
 const SECTOR_GROUP_ORDER = ['US Sectors', 'Tech Sectors', 'International', 'Commodities', 'Crypto', 'Fixed Income'];
 
@@ -3475,9 +3600,20 @@ async function renderSectors() {
   const grid = document.getElementById('sectors-grid');
   if (!grid) return;
   if (!_sectorsData) {
-    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><h3>Loading sector data…</h3><p>Fetching performance for 72 market sectors across 6 groups</p></div>';
+    // Try localStorage cache first
+    const cached = _loadSectorCache();
+    if (cached) {
+      _sectorsData = cached.data;
+      _sectorAvailable = cached.available || {};
+      _buildSectorGrid();
+      return;
+    }
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><h3>Loading sector data…</h3><p>Fetching performance for 90 market sectors across 6 groups (cached for 12h)</p></div>';
     try {
-      _sectorsData = await api('GET', '/sectors');
+      const res = await api('GET', '/sectors');
+      _sectorsData = res.sectors || res;
+      _sectorAvailable = res.available || {};
+      _saveSectorCache(_sectorsData, _sectorAvailable);
     } catch (e) {
       grid.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Failed to load sectors</h3><p>${e.message}</p><button class="btn-secondary" onclick="refreshSectors()">Retry</button></div>`;
       return;
@@ -3488,8 +3624,10 @@ async function renderSectors() {
 
 async function refreshSectors() {
   _sectorsData = null;
+  _sectorAvailable = {};
+  localStorage.removeItem('sectorDataCache');
   const grid = document.getElementById('sectors-grid');
-  if (grid) grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><h3>Refreshing…</h3></div>';
+  if (grid) grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><h3>Refreshing sector data…</h3><p>Fetching live data from Yahoo Finance</p></div>';
   await renderSectors();
 }
 
@@ -3605,10 +3743,15 @@ async function _showSectorPopup(anchorEl, symbol, name) {
     document.body.appendChild(popup);
   }
 
-  // Position popup
-  const rect = anchorEl.getBoundingClientRect();
-  const top = Math.min(rect.top + window.scrollY, window.innerHeight + window.scrollY - 340);
-  const left = Math.min(rect.right + 14, window.innerWidth - 380);
+  // Position popup near mouse cursor (not at element right edge)
+  const popupW = 360, popupH = 340;
+  let left = _mouseX + 16;
+  let top = _mouseY + window.scrollY - 20;
+  // Keep within viewport
+  if (left + popupW > window.innerWidth - 10) left = _mouseX - popupW - 10;
+  if (left < 0) left = 10;
+  if (top - window.scrollY + popupH > window.innerHeight - 10) top = _mouseY + window.scrollY - popupH + 20;
+  if (top < window.scrollY + 10) top = window.scrollY + 10;
   popup.style.top = `${top}px`;
   popup.style.left = `${left}px`;
 
@@ -3671,6 +3814,9 @@ function customizeSectorGroup(groupName) {
   const activeSymbols = custom.symbols?.length ? custom.symbols : allInGroup.map(s => s.symbol);
   const displayName = custom.label || groupName;
 
+  // Get available alternatives for this group (not already active)
+  const availableList = (_sectorAvailable[groupName] || []).filter(a => !activeSymbols.includes(a.symbol));
+
   document.getElementById('cust-modal-title').textContent = `✏️ Customize: ${groupName}`;
   const body = document.getElementById('cust-modal-body');
   body.innerHTML = `
@@ -3682,24 +3828,53 @@ function customizeSectorGroup(groupName) {
       <label class="form-label">Active Sectors <span class="form-label-hint">(click × to remove)</span></label>
       <div class="cust-chips" id="cust-active-chips">
         ${activeSymbols.map(sym => {
-          const s = _sectorsData?.find(x => x.symbol === sym);
+          const s = _sectorsData?.find(x => x.symbol === sym) || (_sectorAvailable[groupName] || []).find(x => x.symbol === sym);
           return `<span class="cust-chip" data-sym="${sym}">${s?.emoji || '📊'} ${sym}<button onclick="removeCustChip('${sym}')">×</button></span>`;
         }).join('')}
       </div>
     </div>
+    ${availableList.length ? `
     <div class="form-group">
-      <label class="form-label">Add Ticker</label>
+      <label class="form-label">Quick Add from Suggestions</label>
+      <div class="cust-dropdown-wrap">
+        <select class="form-select" id="cust-dropdown">
+          <option value="">— Select an ETF to add —</option>
+          ${availableList.map(a => `<option value="${a.symbol}" data-emoji="${a.emoji}">${a.emoji} ${a.symbol} — ${a.name}</option>`).join('')}
+        </select>
+        <button class="btn-secondary" onclick="addCustFromDropdown()">+ Add</button>
+      </div>
+    </div>` : ''}
+    <div class="form-group">
+      <label class="form-label">Add Custom Ticker</label>
       <div style="display:flex;gap:8px">
         <input type="text" class="form-input" id="cust-add-ticker" placeholder="e.g. VTI, SPY, GLD…" style="text-transform:uppercase" onkeydown="if(event.key==='Enter')addCustChip()" />
         <button class="btn-secondary" onclick="addCustChip()">Add</button>
       </div>
-      <p class="form-hint">Enter any ETF or stock ticker. Already-fetched tickers appear with their emoji.</p>
+      <p class="form-hint">Enter any ETF or stock ticker symbol to add it to this group.</p>
     </div>
     <div style="margin-top:4px">
       <button class="btn-outline" style="font-size:11px;padding:4px 10px" onclick="resetCustomSector('${groupName}')">↺ Reset to Default</button>
     </div>`;
 
   document.getElementById('customize-sectors-modal').style.display = 'flex';
+}
+
+function addCustFromDropdown() {
+  const sel = document.getElementById('cust-dropdown');
+  const sym = sel?.value;
+  if (!sym) return;
+  const opt = sel.options[sel.selectedIndex];
+  const emoji = opt?.dataset?.emoji || '📊';
+  if (document.querySelector(`.cust-chip[data-sym="${sym}"]`)) { sel.value = ''; return; }
+  const chips = document.getElementById('cust-active-chips');
+  const chip = document.createElement('span');
+  chip.className = 'cust-chip';
+  chip.dataset.sym = sym;
+  chip.innerHTML = `${emoji} ${sym}<button onclick="removeCustChip('${sym}')">×</button>`;
+  chips.appendChild(chip);
+  // Remove from dropdown
+  opt.remove();
+  sel.value = '';
 }
 
 function removeCustChip(sym) {
@@ -3778,29 +3953,109 @@ function initTVMaps() {
   });
 }
 
+let _calPeriod = 'week';
+function setCalendarPeriod(range) {
+  _calPeriod = range;
+  document.querySelectorAll('.cal-period-btn').forEach(b => b.classList.toggle('active', b.dataset.range === range));
+  // Re-inject with fresh container
+  const container = document.getElementById('tv-calendar-container');
+  if (container) { delete container.dataset.initialized; container.innerHTML = ''; }
+  initTVCalendar();
+}
+
 function initTVCalendar() {
   _injectTVWidget('tv-calendar-container', 'events', {
     colorTheme: 'dark',
     isTransparent: false,
     width: '100%',
-    height: 650,
+    height: 680,
     locale: 'en',
     importanceFilter: '-1,0,1',
-    countryFilter: 'ar,au,br,ca,cn,de,es,fr,gb,in,it,jp,kr,mx,ru,sa,tr,us,eu',
+    countryFilter: 'us', // US only
   });
 }
 
 function initTVScreener() {
+  // Re-init if filters changed
+  const container = document.getElementById('tv-screener-container');
+  if (container) { delete container.dataset.initialized; container.innerHTML = ''; }
+  const market = document.getElementById('screener-market')?.value || 'america';
+  const col = document.getElementById('screener-column')?.value || 'overview';
+  const screen = document.getElementById('screener-screen')?.value || 'general';
   _injectTVWidget('tv-screener-container', 'screener', {
     width: '100%',
     height: 650,
-    defaultColumn: 'overview',
-    defaultScreen: 'general',
-    market: 'america',
+    defaultColumn: col,
+    defaultScreen: screen,
+    market: market,
     showToolbar: true,
     colorTheme: 'dark',
     locale: 'en',
   });
+}
+
+/* ─── TRADINGVIEW ADVANCED CHART ──────────────────────────────── */
+let _tvChartSymbol = 'NASDAQ:AAPL';
+let _tvChartInitialized = false;
+
+function initTVTradingView() {
+  const container = document.getElementById('tv-tradingview-container');
+  if (!container) return;
+  // Always re-create to load new symbol
+  delete container.dataset.initialized;
+  container.innerHTML = '';
+  const sym = _tvChartSymbol;
+  const script = document.createElement('script');
+  script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+  script.async = true;
+  script.text = JSON.stringify({
+    autosize: true,
+    symbol: sym,
+    interval: 'D',
+    timezone: 'America/New_York',
+    theme: 'dark',
+    style: '1',
+    locale: 'en',
+    enable_publishing: false,
+    allow_symbol_change: true,
+    calendar: false,
+    support_host: 'https://www.tradingview.com',
+    hide_legend: false,
+    hide_top_toolbar: false,
+    save_image: true,
+    studies: ['RSI@tv-basicstudies', 'MAExp@tv-basicstudies'],
+  });
+  container.appendChild(script);
+}
+
+function setTVSymbol(sym) {
+  _tvChartSymbol = sym;
+  const input = document.getElementById('tv-symbol-input');
+  if (input) input.value = sym;
+  initTVTradingView();
+}
+
+function loadTVChart() {
+  const input = document.getElementById('tv-symbol-input');
+  let sym = (input?.value || '').trim().toUpperCase();
+  if (!sym) return;
+  // Auto-prefix if no exchange specified
+  if (!sym.includes(':')) {
+    // Guess exchange
+    if (sym.endsWith('-USD') || sym.endsWith('USDT') || sym.endsWith('BTC')) sym = 'BINANCE:' + sym.replace('-', '');
+    else sym = sym; // TradingView will resolve
+  }
+  _tvChartSymbol = sym;
+  initTVTradingView();
+}
+
+function screenerSearchSymbol() {
+  const input = document.getElementById('screener-symbol-input');
+  const sym = (input?.value || '').trim().toUpperCase();
+  if (!sym) return;
+  // Open in TradingView tab with the searched symbol
+  _tvChartSymbol = sym;
+  navigate('tradingview');
 }
 
 /* ─── BOOT ────────────────────────────────────────────────────── */
