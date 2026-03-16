@@ -261,7 +261,7 @@ async function yfProfile(symbol) {
 
   // 4) Multi-timeframe performance (price change %)
   try {
-    const perfRanges = { '1D': '1d', '7D': '7d', '1M': '1mo', '3M': '3mo', 'YTD': 'ytd', '1Y': '1y', '2Y': '2y', '3Y': '3y' };
+    const perfRanges = { '1D': '1d', '7D': '5d', '1M': '1mo', '3M': '3mo', 'YTD': 'ytd', '1Y': '1y', '2Y': '2y', '3Y': '3y' };
     const perfResults = {};
     for (const [label, range] of Object.entries(perfRanges)) {
       try {

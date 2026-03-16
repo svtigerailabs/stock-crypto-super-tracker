@@ -633,7 +633,9 @@ function buildStockCardRich(symbol) {
   }).join('');
 
   return `
-    <div class="rich-card ${dir}" onclick="showNewsModal('${symbol}')" onmouseenter="lazyLoadHoverData('${symbol}');positionStockPopup(this)">
+    <div class="rich-card ${dir}" onclick="showNewsModal('${symbol}')"
+         onmouseenter="_scheduleShow(this,()=>{lazyLoadHoverData('${symbol}');positionStockPopup(this);this.classList.add('popup-open');})"
+         onmouseleave="_scheduleHide(this,()=>this.classList.remove('popup-open'))">
       <div class="rich-card-head">
         <div>
           <div class="rich-card-symbol">${symbol}</div>
@@ -703,7 +705,7 @@ function buildStockDetailedRow(symbol, rank) {
   const period = state.stockChartPeriod || '1mo';
   const chartData = state.stockCharts?.[symbol]?.[period] || p.sparkline || [];
   const spark = buildSparklineSVG(chartData, 90, 26, '#3fb950', '#f85149');
-  const vol = s.volume ? fmtVol(s.volume) : '—';
+  const vol = s.volume ? fmtVol(s.volume) : (p.avgVolume || '—');
   const mcap = p.marketCap || '—';
   const perf = p._perf || {};
   const dir = typeof s.changePercent === 'number' ? (s.changePercent >= 0 ? 'up' : 'down') : '';
@@ -716,7 +718,8 @@ function buildStockDetailedRow(symbol, rank) {
 
   return `
     <div class="lcw-row ${dir}" id="lcw-stock-${symbol}"
-         onmouseenter="showStockTableHover('${symbol}',this)" onmouseleave="hideStockTableHover(this)"
+         onmouseenter="_scheduleShow(this,()=>showStockTableHover('${symbol}',this),300)"
+         onmouseleave="_scheduleHide(this,()=>hideStockTableHover(this))"
          onclick="showStockDetailPopup('${symbol}')" title="Click for full details">
       <div class="lcw-col lcw-rank">${rank}</div>
       <div class="lcw-col lcw-coin">
@@ -761,7 +764,7 @@ function updateStockDetailedRow(symbol) {
   const period = state.stockChartPeriod || '1mo';
   const chartData = state.stockCharts?.[symbol]?.[period] || p.sparkline || [];
   const spark = buildSparklineSVG(chartData, 90, 26, '#3fb950', '#f85149');
-  const vol = s.volume ? fmtVol(s.volume) : '—';
+  const vol = s.volume ? fmtVol(s.volume) : (p.avgVolume || '—');
   const mcap = p.marketCap || '—';
   const price = typeof s.price === 'number' ? `$${s.price.toFixed(2)}` : '—';
   const rank = row.querySelector('.lcw-rank')?.textContent || '';
@@ -780,7 +783,7 @@ function updateStockDetailedRow(symbol) {
     </div>
     <div class="lcw-col lcw-price">${price}</div>
     ${pctCell(perf['1D'] ?? s.changePercent)}
-    ${pctCell(perf['5D'])}
+    ${pctCell(perf['7D'])}
     ${pctCell(perf['1M'])}
     ${pctCell(perf['3M'])}
     ${pctCell(perf['YTD'])}
@@ -826,7 +829,9 @@ function buildStockCard(symbol) {
   const dir = typeof chg === 'number' ? (chg >= 0 ? 'up' : 'down') : '';
 
   return `
-  <div class="stock-card ${dir}" id="card-${symbol}" onclick="showNewsModal('${symbol}')" onmouseenter="lazyLoadHoverData('${symbol}');positionStockPopup(this)">
+  <div class="stock-card ${dir}" id="card-${symbol}" onclick="showNewsModal('${symbol}')"
+       onmouseenter="_scheduleShow(this,()=>{lazyLoadHoverData('${symbol}');positionStockPopup(this);this.classList.add('popup-open');})"
+       onmouseleave="_scheduleHide(this,()=>this.classList.remove('popup-open'))">
     <div class="stock-card-compact">
       <div class="stock-symbol">${symbol}</div>
       <div class="stock-price-compact">
@@ -855,6 +860,31 @@ function updateStockCard(symbol) {
     chgEl.className = `change ${dir}`;
   }
   card.className = card.className.replace(/\b(up|down)\b/g, '').trim() + ' ' + dir;
+}
+
+/* ─── UNIFIED HOVER TIMER SYSTEM ─────────────────────────────
+   Solves the "popup disappears when mouse moves to button" problem.
+   Since popups are position:fixed they visually leave the card's
+   bounding box, triggering mouseleave. We bridge the gap with a
+   short hide delay + popup mouseenter cancels the hide.
+   ─────────────────────────────────────────────────────────────── */
+const _hoverTimers = new WeakMap();
+function _scheduleShow(cardEl, showFn, delay = 500) {
+  let t = _hoverTimers.get(cardEl) || {};
+  clearTimeout(t.hide); t.hide = null;
+  if (!t.show) t.show = setTimeout(() => { t.show = null; _hoverTimers.set(cardEl, t); showFn(); }, delay);
+  _hoverTimers.set(cardEl, t);
+}
+function _scheduleHide(cardEl, hideFn, delay = 200) {
+  let t = _hoverTimers.get(cardEl) || {};
+  clearTimeout(t.show); t.show = null;
+  if (!t.hide) t.hide = setTimeout(() => { t.hide = null; _hoverTimers.set(cardEl, t); hideFn(); }, delay);
+  _hoverTimers.set(cardEl, t);
+}
+function _cancelHide(cardEl) {
+  const t = _hoverTimers.get(cardEl) || {};
+  clearTimeout(t.hide); t.hide = null;
+  _hoverTimers.set(cardEl, t);
 }
 
 /* ─── STOCK HOVER POPUP POSITIONING ─────────────────────────── */
@@ -1023,6 +1053,13 @@ function renderHoverPopup(symbol, el) {
     ${earningsHtml}
     <div class="detail-section-title">Alerts (${myAlerts.length})</div>
     ${alertRows}`;
+
+  // Bridge: keep popup visible when mouse moves from card into popup
+  const card = el.closest('.stock-card, .rich-card');
+  if (card) {
+    el.onmouseenter = () => _cancelHide(card);
+    el.onmouseleave = () => _scheduleHide(card, () => card.classList.remove('popup-open'));
+  }
 }
 
 /* ─── ALERTS VIEW ─────────────────────────────────────────────── */
@@ -2512,7 +2549,8 @@ function buildCryptoCompactCard(c) {
 
   return `
     <div class="crypto-compact-card ${dir}"
-         onmouseenter="showCryptoHover('${c.id}', this)" onmouseleave="hideCryptoHover(this)"
+         onmouseenter="_scheduleShow(this,()=>showCryptoHover('${c.id}',this))"
+         onmouseleave="_scheduleHide(this,()=>hideCryptoHover(this))"
          onclick="openCryptoDetailModal('${c.id}')">
       ${deleteBtn}${pinBtn}
       <div class="compact-card-left">
@@ -2588,7 +2626,9 @@ function buildCryptoCard(c) {
     : '';
 
   return `
-    <div class="crypto-card ${dir}" onmouseenter="showCryptoHover('${c.id}', this)" onmouseleave="hideCryptoHover(this)">
+    <div class="crypto-card ${dir}"
+         onmouseenter="_scheduleShow(this,()=>showCryptoHover('${c.id}',this))"
+         onmouseleave="_scheduleHide(this,()=>hideCryptoHover(this))">
       ${deleteBtn}
       <div class="crypto-card-top">
         <img class="crypto-icon" src="${c.image}" alt="${c.symbol}" onerror="this.style.display='none'" />
@@ -2611,10 +2651,9 @@ function buildCryptoCard(c) {
 function showCryptoHover(id, cardEl) {
   const popup = cardEl.querySelector('.crypto-hover-popup');
   if (!popup) return;
-  // Position popup fixed at top of viewport
   const rect = cardEl.getBoundingClientRect();
   popup.style.left = Math.min(rect.left, window.innerWidth - 420) + 'px';
-  popup.classList.add('visible');
+  cardEl.classList.add('popup-open');
   if (popup.dataset.loaded) return;
   popup.dataset.loaded = '1';
   const c = state.cryptoData.find(x => x.id === id);
@@ -2622,6 +2661,7 @@ function showCryptoHover(id, cardEl) {
 }
 
 function hideCryptoHover(cardEl) {
+  cardEl.classList.remove('popup-open');
   const popup = cardEl.querySelector('.crypto-hover-popup');
   if (popup) popup.classList.remove('visible');
 }
@@ -2672,6 +2712,13 @@ function renderCryptoHoverPopup(c, el) {
     </div>`;
   // Auto-load the default 7D chart
   loadCryptoPopupChart(c.id, '7d', el.querySelector('.hover-popup-period-btn.active'), popupId);
+
+  // Bridge: keep popup visible when mouse moves from card into popup
+  const card = el.closest('.crypto-card, .crypto-compact-card');
+  if (card) {
+    el.onmouseenter = () => _cancelHide(card);
+    el.onmouseleave = () => _scheduleHide(card, () => hideCryptoHover(card));
+  }
 }
 
 async function loadCryptoPopupChart(id, range, btnEl, popupId) {
@@ -2775,8 +2822,8 @@ function buildCryptoDetailedTable(coins) {
 
     return `
       <div class="lcw-row" id="lcw-crypto-${c.id}"
-           onmouseenter="showCryptoTableHover('${c.id}',this)"
-           onmouseleave="hideCryptoTableHover(this)"
+           onmouseenter="_scheduleShow(this,()=>showCryptoTableHover('${c.id}',this),300)"
+           onmouseleave="_scheduleHide(this,()=>hideCryptoTableHover(this))"
            onclick="openCryptoDetailModal('${c.id}')">
         <div class="lcw-col lcw-rank">${c.rank || ''}</div>
         <div class="lcw-col lcw-crypto-icon"><img class="crypto-icon" src="${c.image}" alt="${c.symbol}" onerror="this.style.display='none'" /></div>
@@ -2880,6 +2927,9 @@ function showStockTableHover(symbol, rowEl) {
     </div>`;
   // Lazy load hover data if not yet loaded
   lazyLoadHoverData(symbol);
+  // Bridge: keep popup open when mouse moves into it
+  popup.onmouseenter = () => _cancelHide(rowEl);
+  popup.onmouseleave = () => _scheduleHide(rowEl, () => hideStockTableHover(rowEl));
 }
 function hideStockTableHover(rowEl) {
   const popup = rowEl.querySelector('.crypto-hover-popup');
@@ -2890,11 +2940,16 @@ function hideStockTableHover(rowEl) {
 function showCryptoTableHover(id, rowEl) {
   const popup = rowEl.querySelector('.crypto-hover-popup');
   if (!popup) return;
+  const rect = rowEl.getBoundingClientRect();
+  popup.style.left = Math.min(rect.left + 40, window.innerWidth - 420) + 'px';
   popup.classList.add('visible');
   if (popup.dataset.loaded) return;
   popup.dataset.loaded = '1';
   const c = state.cryptoData.find(x => x.id === id);
   if (c) renderCryptoHoverPopup(c, popup);
+  // Bridge: keep popup open when mouse moves into it
+  popup.onmouseenter = () => _cancelHide(rowEl);
+  popup.onmouseleave = () => _scheduleHide(rowEl, () => hideCryptoTableHover(rowEl));
 }
 function hideCryptoTableHover(rowEl) {
   const popup = rowEl.querySelector('.crypto-hover-popup');
