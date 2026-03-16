@@ -694,7 +694,9 @@ async function fetchCryptoData() {
 
   try {
     const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=true&price_change_percentage=1h%2C24h%2C7d%2C30d%2C200d%2C1y';
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) });
+    const cgHeaders = { 'Accept': 'application/json' };
+    if (process.env.COINGECKO_API_KEY) cgHeaders['x-cg-demo-api-key'] = process.env.COINGECKO_API_KEY;
+    const res = await fetch(url, { headers: cgHeaders, signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
     const data = await res.json();
     const result = data.map(c => ({
@@ -833,7 +835,9 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   if (cached && (Date.now() - cached.at) < 10 * 60 * 1000) return res.json(cached.data);
   const fetchCgChart = async (d) => {
     const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${d}`;
-    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+    const cgHdrs = { Accept: 'application/json' };
+    if (process.env.COINGECKO_API_KEY) cgHdrs['x-cg-demo-api-key'] = process.env.COINGECKO_API_KEY;
+    const r = await fetch(url, { headers: cgHdrs, signal: AbortSignal.timeout(10000) });
     if (!r.ok) throw new Error(`CoinGecko chart HTTP ${r.status}`);
     const json = await r.json();
     if (json.status?.error_code) throw new Error(json.status.error_message || 'CoinGecko error');
