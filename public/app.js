@@ -41,6 +41,43 @@ async function init() {
     startTickerRotation('stock', 12);
     startTickerRotation('crypto', 12);
   });
+
+  // Background chart preloading: stocks every 30 min, crypto every 5 min
+  setTimeout(_preloadStockCharts, 5000); // initial load after 5s
+  setInterval(_preloadStockCharts, 30 * 60 * 1000);
+  setTimeout(_preloadCryptoCharts, 8000);
+  setInterval(_preloadCryptoCharts, 5 * 60 * 1000);
+}
+
+async function _preloadStockCharts() {
+  const symbols = getDashSymbols();
+  if (!symbols.length) return;
+  const period = state.stockChartPeriod || '1mo';
+  for (const sym of symbols) {
+    if (state.stockCharts[sym]?.[period]) continue; // already cached
+    try {
+      const data = await api('GET', `/stock/${sym}/chart?range=${period}`);
+      if (!state.stockCharts[sym]) state.stockCharts[sym] = {};
+      state.stockCharts[sym][period] = (data.dataPoints || []).map(p => p.close);
+    } catch {}
+    await new Promise(r => setTimeout(r, 300)); // gentle rate-limit
+  }
+}
+
+async function _preloadCryptoCharts() {
+  if (!state.cryptoData?.length) return;
+  const period = state.cryptoChartPeriod || '7d';
+  const coins = state.cryptoData.slice(0, 20); // top 20
+  for (const c of coins) {
+    if (state.cryptoCharts[c.id]?.[period]) continue;
+    try {
+      const prices = await api('GET', `/crypto/${c.id}/chart?range=${period}`);
+      if (!Array.isArray(prices) || !prices.length) continue;
+      if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+      state.cryptoCharts[c.id][period] = prices;
+    } catch {}
+    await new Promise(r => setTimeout(r, 2000)); // CoinGecko rate-limit
+  }
 }
 
 /* ─── BUILD CONDITION ROWS (6 checkboxes, first two ON by default) ─── */
@@ -681,14 +718,10 @@ function calc52wPct(price, low, high) {
 /* ─── STOCK DETAILED TABLE (Dashboard 3 — livecoinwatch style) ── */
 function buildStockDetailedTable(symbols) {
   const period = state.stockChartPeriod || '1mo';
-  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y']].map(([p, label]) =>
-    `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="setStockChartPeriod('${p}')">${label}</button>`
+  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y'],['5y','5Y']].map(([p, label]) =>
+    `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="event.stopPropagation();setStockChartPeriod('${p}')">${label}</button>`
   ).join('');
   return `
-    <div class="lcw-table-header-bar">
-      <span class="lcw-table-chart-label">Chart Period:</span>
-      <span class="chart-period-toggle">${periodBtns}</span>
-    </div>
     <div class="lcw-table lcw-stock">
       <div class="lcw-header">
         <div class="lcw-col lcw-rank">#</div>
@@ -702,7 +735,7 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
-        <div class="lcw-col lcw-chart">Chart</div>
+        <div class="lcw-col lcw-chart">Chart <span class="chart-period-toggle">${periodBtns}</span></div>
         <div class="lcw-col lcw-mcap">Mkt Cap</div>
         <div class="lcw-col lcw-vol">Volume</div>
       </div>
@@ -1046,6 +1079,9 @@ function renderHoverPopup(symbol, el) {
     : '<div style="font-size:11px;color:var(--text-dim);padding:2px 0">No active alerts</div>';
 
   el.innerHTML = `
+    <div class="detail-open-bar">
+      <button class="detail-open-full-btn" onclick="event.stopPropagation(); showStockDetailPopup('${symbol}')">📊 Open Full Details →</button>
+    </div>
     <div class="detail-header">
       <div>
         <div class="detail-symbol">${symbol}</div>
@@ -3579,8 +3615,8 @@ let _sectorHoverTimer = null;
 let _mouseX = 0, _mouseY = 0;
 document.addEventListener('mousemove', e => { _mouseX = e.clientX; _mouseY = e.clientY; });
 
-// Client-side sector cache (localStorage, 12h TTL)
-const SECTOR_CLIENT_TTL = 12 * 60 * 60 * 1000;
+// Client-side sector cache (localStorage, 6h TTL)
+const SECTOR_CLIENT_TTL = 6 * 60 * 60 * 1000;
 function _loadSectorCache() {
   try {
     const raw = localStorage.getItem('sectorDataCache');
@@ -3770,25 +3806,35 @@ async function _showSectorPopup(anchorEl, symbol, name) {
       <div class="snp-title"><span class="snp-symbol">${symbol}</span> ${name}</div>
       <div class="snp-price">${priceStr} ${chgStr}</div>
     </div>
-    ${perfRows ? `<div class="snp-perf-row">${perfRows}</div>` : ''}
-    <div class="snp-news-list" id="snp-news-${symbol}"><div class="snp-loading">Loading news…</div></div>`;
+    ${perfRows ? `<div class="snp-perf-row">${perfRows}</div>` : (sec ? '' : '<div class="snp-loading">Loading sector data…</div>')}
+    <div class="snp-news-list" id="snp-news-${symbol}"><div class="snp-loading">Loading news…</div></div>
+    <div class="snp-footer">
+      <button class="snp-open-btn" onclick="event.stopPropagation();setTVSymbol('${symbol}');navigate('tradingview')">📈 Open Chart →</button>
+    </div>`;
   popup.classList.add('snp-active');
 
-  // Lazy-load news
+  // Lazy-load news (try stock news endpoint, fall back to latest)
   try {
-    const news = await api('GET', `/stock/${symbol}/news`);
+    let news = [];
+    try { news = await api('GET', `/stock/${symbol}/news`); } catch {}
+    if (!news?.length) {
+      try {
+        const latest = await api('GET', `/api/news/latest?symbols=${symbol}`);
+        news = latest?.articles || latest || [];
+      } catch {}
+    }
     const nl = document.getElementById(`snp-news-${symbol}`);
     if (!nl || !popup.classList.contains('snp-active')) return;
     nl.innerHTML = news.length
-      ? news.slice(0, 6).map(n => `
+      ? news.slice(0, 5).map(n => `
           <div class="snp-news-item">
-            <a href="${n.link}" target="_blank" rel="noopener">${n.title}</a>
-            <span class="snp-news-meta">${n.source || ''}</span>
+            <a href="${n.link || n.url}" target="_blank" rel="noopener">${n.title}</a>
+            <span class="snp-news-meta">${n.source || n.publisher || ''}</span>
           </div>`).join('')
-      : '<div class="snp-loading">No news found</div>';
+      : '<div class="snp-loading">No recent news</div>';
   } catch {
     const nl = document.getElementById(`snp-news-${symbol}`);
-    if (nl) nl.innerHTML = '<div class="snp-loading">News unavailable</div>';
+    if (nl) nl.innerHTML = '<div class="snp-loading">No recent news</div>';
   }
 }
 
@@ -3963,15 +4009,59 @@ function setCalendarPeriod(range) {
   initTVCalendar();
 }
 
+function refreshCalendarFilters() {
+  const container = document.getElementById('tv-calendar-container');
+  if (container) { delete container.dataset.initialized; container.innerHTML = ''; }
+  initTVCalendar();
+}
+
+function filterCalendarEvents(query) {
+  const bar = document.getElementById('cal-event-filter-bar');
+  const label = document.getElementById('cal-filter-label-text');
+  if (query.trim()) {
+    bar.style.display = 'flex';
+    label.textContent = `Showing events matching: "${query}"`;
+  } else {
+    bar.style.display = 'none';
+  }
+  // TradingView widget can't be filtered externally; show note overlay
+  const overlay = document.getElementById('cal-search-overlay');
+  if (overlay) overlay.remove();
+  if (query.trim()) {
+    const container = document.getElementById('tv-calendar-container');
+    const ov = document.createElement('div');
+    ov.id = 'cal-search-overlay';
+    ov.className = 'cal-search-overlay';
+    ov.innerHTML = `<div class="cal-search-note">📅 Showing TradingView calendar — search "<strong>${query}</strong>" not supported within the embedded widget.<br>Use <a href="https://www.tradingview.com/economic-calendar/" target="_blank">TradingView Economic Calendar</a> for full search.</div>`;
+    container.parentNode.insertBefore(ov, container);
+  }
+}
+
+function clearCalendarSearch() {
+  const input = document.getElementById('cal-search-input');
+  if (input) input.value = '';
+  filterCalendarEvents('');
+}
+
 function initTVCalendar() {
+  // Read impact filter checkboxes (default: High only)
+  const high = document.getElementById('cal-impact-high')?.checked ?? true;
+  const medium = document.getElementById('cal-impact-medium')?.checked ?? false;
+  const low = document.getElementById('cal-impact-low')?.checked ?? false;
+  const filters = [];
+  if (high) filters.push('1');
+  if (medium) filters.push('0');
+  if (low) filters.push('-1');
+  const importanceFilter = filters.length ? filters.join(',') : '1';
+
   _injectTVWidget('tv-calendar-container', 'events', {
     colorTheme: 'dark',
     isTransparent: false,
     width: '100%',
     height: 680,
     locale: 'en',
-    importanceFilter: '-1,0,1',
-    countryFilter: 'us', // US only
+    importanceFilter,
+    countryFilter: 'us',
   });
 }
 
@@ -4004,6 +4094,12 @@ function initTVTradingView() {
   // Always re-create to load new symbol
   delete container.dataset.initialized;
   container.innerHTML = '';
+  // Set explicit height to fill window
+  const headerH = document.querySelector('#tradingview-view .view-header')?.offsetHeight || 80;
+  const barH = document.querySelector('.tv-symbol-bar')?.offsetHeight || 46;
+  const h = Math.max(500, window.innerHeight - headerH - barH - 60);
+  container.style.height = h + 'px';
+
   const sym = _tvChartSymbol;
   const script = document.createElement('script');
   script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';

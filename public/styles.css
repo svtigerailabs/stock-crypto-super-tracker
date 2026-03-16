@@ -1095,7 +1095,7 @@ html, body {
 }
 /* Stock table: #, stock, price, 1D, 7D, 1M, 3M, YTD, 1Y, 2Y, 3Y, chart, mcap, vol */
 .lcw-stock .lcw-header {
-  grid-template-columns: 36px 100px 70px repeat(8, 54px) 210px 80px 72px;
+  grid-template-columns: 36px 100px 62px repeat(8, 52px) 1fr 78px 70px;
 }
 
 .lcw-row {
@@ -1106,7 +1106,7 @@ html, body {
   font-size: 12px; transition: background .1s; cursor: pointer;
 }
 .lcw-stock .lcw-row {
-  grid-template-columns: 36px 100px 70px repeat(8, 54px) 210px 80px 72px;
+  grid-template-columns: 36px 100px 62px repeat(8, 52px) 1fr 78px 70px;
 }
 .lcw-ath { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
 .lcw-row:hover { background: #1c2128; }
@@ -1698,7 +1698,7 @@ html, body {
   border: 1px solid var(--border); background: var(--surface);
   position: relative;
 }
-.tv-chart-container { min-height: 680px; }
+.tv-chart-container { height: calc(100vh - 195px); min-height: 500px; }
 .tv-widget-container > div { width: 100%; height: 100%; }
 
 /* ── TradingView Symbol Input Bar ── */
@@ -1754,15 +1754,71 @@ html, body {
 }
 .cal-legend-item.tip { margin-left: auto; color: var(--text-dim); font-style: italic; }
 
-/* ── Detailed Table Header Bar (chart period above table) ── */
-.lcw-table-header-bar {
+/* ── "Open Full Details" bar in hover popup ── */
+.detail-open-bar {
+  padding: 6px 12px 4px; border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.detail-open-full-btn {
+  background: rgba(88,166,255,.1); border: 1px solid rgba(88,166,255,.3);
+  color: var(--blue); padding: 4px 12px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit;
+  transition: all .15s; width: 100%;
+}
+.detail-open-full-btn:hover { background: rgba(88,166,255,.2); border-color: var(--blue); }
+
+/* ── Sector popup footer ── */
+.snp-footer { padding: 6px 14px 8px; border-top: 1px solid var(--border); }
+.snp-open-btn {
+  background: rgba(63,185,80,.1); border: 1px solid rgba(63,185,80,.3);
+  color: var(--green); padding: 4px 12px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit;
+  transition: all .15s; width: 100%;
+}
+.snp-open-btn:hover { background: rgba(63,185,80,.2); border-color: var(--green); }
+
+/* ── Calendar controls (impact filters + search) ── */
+.cal-controls {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.cal-impact-filters { display: flex; align-items: center; gap: 8px; }
+.cal-filter-label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.cal-filter-check { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.cal-filter-check input { display: none; }
+.cal-chip {
+  padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
+  border: 1px solid transparent; cursor: pointer; transition: all .15s; user-select: none;
+}
+.cal-chip.high { background: rgba(248,81,73,.1); border-color: rgba(248,81,73,.3); color: #f85149; }
+.cal-chip.medium { background: rgba(210,153,34,.1); border-color: rgba(210,153,34,.3); color: var(--orange); }
+.cal-chip.low { background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.3); color: var(--green); }
+.cal-filter-check input:not(:checked) + .cal-chip { opacity: 0.4; }
+.cal-search-wrap { flex: 1; min-width: 200px; max-width: 380px; }
+.cal-search-input { width: 100%; font-size: 12px; padding: 6px 12px; }
+.cal-event-filter-bar {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 0 10px; margin-bottom: 2px;
+  padding: 6px 12px; background: rgba(88,166,255,.08);
+  border: 1px solid rgba(88,166,255,.2); border-radius: 6px; margin-bottom: 8px;
+  font-size: 12px; color: var(--blue);
 }
-.lcw-table-chart-label {
-  font-size: 11px; font-weight: 600; color: var(--text-dim);
-  white-space: nowrap;
+.cal-clear-filter {
+  margin-left: auto; background: none; border: none; color: var(--text-dim);
+  cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 4px;
 }
+.cal-clear-filter:hover { color: var(--red); }
+.cal-search-overlay {
+  margin-bottom: 8px;
+}
+.cal-search-note {
+  background: rgba(88,166,255,.08); border: 1px solid rgba(88,166,255,.2);
+  border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--text-dim);
+}
+.cal-search-note a { color: var(--blue); }
+
+/* ── Detailed Table Header Bar (kept for backward compat, hidden) ── */
+.lcw-table-header-bar { display: none; }
+.lcw-table-chart-label { display: none; }
 
 /* ── Sector Customize dropdown ── */
 .cust-dropdown-wrap { display: flex; gap: 8px; align-items: center; }
