@@ -835,28 +835,28 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   const cached = cryptoChartCache[cacheKey];
   if (cached && (Date.now() - cached.at) < 10 * 60 * 1000) return res.json(cached.data);
 
+  // Extract symbol from Coinpaprika ID: "btc-bitcoin" → "BTC"
+  const symbol = id.split('-')[0].toUpperCase();
+  const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
+
   try {
     let prices = [];
     if (range === '1d') {
-      // Today's hourly OHLCV from Coinpaprika
-      const url = `https://api.coinpaprika.com/v1/coins/${id}/ohlcv/today`;
+      // Last 24 hours hourly — CryptoCompare (free, no key needed)
+      const url = `https://min-api.cryptocompare.com/data/v2/histohour?fsym=${symbol}&tsym=USD&limit=24`;
       const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
-      if (!r.ok) throw new Error(`Coinpaprika chart HTTP ${r.status}`);
+      if (!r.ok) throw new Error(`CryptoCompare HTTP ${r.status}`);
       const json = await r.json();
-      prices = json.map(d => d.close).filter(v => v != null);
+      prices = (json.Data?.Data || []).map(d => d.close).filter(v => v > 0);
     } else {
-      // Historical daily OHLCV from Coinpaprika
-      const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
-      const DAYS_MAP = { '7d': 7, '30d': 30, '90d': 90, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 365, '2y': 365 };
-      const days = DAYS_MAP[range];
-      if (!days) return res.status(400).json({ error: 'Invalid range' });
-      const start = new Date(now - days * 86400000).toISOString().split('T')[0];
-      const end = now.toISOString().split('T')[0];
-      const url = `https://api.coinpaprika.com/v1/coins/${id}/ohlcv/historical?start=${start}&end=${end}&limit=366`;
+      const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 365, '2y': 365 };
+      const limit = LIMIT_MAP[range];
+      if (!limit) return res.status(400).json({ error: 'Invalid range' });
+      const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&limit=${limit}`;
       const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
-      if (!r.ok) throw new Error(`Coinpaprika chart HTTP ${r.status}`);
+      if (!r.ok) throw new Error(`CryptoCompare HTTP ${r.status}`);
       const json = await r.json();
-      prices = json.map(d => d.close).filter(v => v != null);
+      prices = (json.Data?.Data || []).map(d => d.close).filter(v => v > 0);
     }
     if (!prices.length) throw new Error('No chart data');
     cryptoChartCache[cacheKey] = { data: prices, at: Date.now() };
