@@ -37,6 +37,10 @@
       <span class="nav-icon">🔖</span> Saved News
       <span class="nav-badge" id="nav-saved-badge" style="display:none">0</span>
     </li>
+    <li class="nav-item" data-view="profiles" onclick="navigate('profiles')">
+      <span class="nav-icon">👤</span> Saved Profiles
+      <span class="nav-badge" id="nav-profiles-badge" style="display:none">0</span>
+    </li>
     <li class="nav-item" data-view="settings" onclick="navigate('settings')">
       <span class="nav-icon">⚙</span> Settings
     </li>
@@ -68,6 +72,7 @@
           <button class="view-toggle-btn" data-mode="detailed" onclick="switchDashView('detailed')" title="Detailed Table">📋</button>
         </div>
         <button class="btn-sm-edit" id="edit-mode-btn" onclick="toggleEditMode()">✏️ Edit</button>
+        <button class="btn-sm-edit" onclick="showSaveProfileModal()" title="Save current watchlist as a profile">💾 Save Profile</button>
         <button class="btn-sm-add" onclick="showAddAlertModal()">＋ Alert</button>
       </div>
     </div>
@@ -176,6 +181,20 @@
   <section id="saved-news-view" class="view">
   </section>
 
+  <!-- PROFILES VIEW -->
+  <section id="profiles-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">Saved Profiles</h1>
+        <p class="view-subtitle" id="profiles-subtitle">Save and switch between different watchlist profiles</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-sm-add" onclick="showSaveProfileModal()">💾 Save Current Profile</button>
+      </div>
+    </div>
+    <div id="profiles-list" class="profiles-list"></div>
+  </section>
+
   <!-- SETTINGS VIEW -->
   <section id="settings-view" class="view">
     <div class="view-header">
@@ -247,6 +266,49 @@
           </div>
         </div>
       </div>
+      <!-- Custom Feeds -->
+      <div class="settings-card settings-card-wide">
+        <h3 class="settings-card-title">🌐 Favorite Websites &amp; Feeds</h3>
+        <p class="settings-card-desc">Add your favorite financial websites, Reddit communities, and Substack newsletters for quick access. All saved locally in your browser.</p>
+        <!-- Feed type tabs -->
+        <div class="feed-type-tabs" id="feed-type-tabs">
+          <button class="feed-tab active" data-type="website" onclick="switchFeedTab('website')">🌐 Websites</button>
+          <button class="feed-tab" data-type="reddit" onclick="switchFeedTab('reddit')">🟠 Reddit</button>
+          <button class="feed-tab" data-type="substack" onclick="switchFeedTab('substack')">📬 Substack</button>
+        </div>
+        <div id="custom-feeds-list"></div>
+        <!-- Add feed form -->
+        <div class="feed-add-form" id="feed-add-form">
+          <div class="form-group">
+            <label class="form-label" id="feed-name-label">Site Name</label>
+            <input type="text" class="form-input" id="feed-name" placeholder="e.g. Seeking Alpha" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" id="feed-url-label">URL</label>
+            <input type="url" class="form-input" id="feed-url" placeholder="https://seekingalpha.com" />
+          </div>
+          <div class="form-group" id="feed-credentials-group" style="display:none">
+            <label class="form-label">Login Email (optional)</label>
+            <input type="email" class="form-input" id="feed-login-email" placeholder="your@email.com" />
+            <label class="form-label" style="margin-top:6px">Password / API Key (optional)</label>
+            <input type="password" class="form-input" id="feed-login-password" placeholder="Saved locally only" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notes (optional)</label>
+            <input type="text" class="form-input" id="feed-notes" placeholder="e.g. great for macro analysis" />
+          </div>
+          <div class="btn-row">
+            <button class="btn-secondary" onclick="addCustomFeed()">Add</button>
+            <label class="toggle-row" style="font-size:12px;margin:0">
+              <span class="form-label" style="margin:0">Save credentials</span>
+              <label class="toggle" style="transform:scale(.8)">
+                <input type="checkbox" id="feed-save-creds" onchange="toggleFeedCreds()" />
+                <span class="toggle-slider"></span>
+              </label>
+            </label>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -270,7 +332,7 @@
         <div class="form-group">
           <label class="form-label">Search Stock / ETF</label>
           <div class="search-wrapper">
-            <input type="text" id="symbol-search" class="form-input" placeholder="e.g. TSLA, Apple, SPY…" oninput="handleSymbolSearch(event)" autocomplete="off" />
+            <input type="text" id="symbol-search" class="form-input" placeholder="e.g. TSLA, Apple, SPY…" oninput="handleSymbolSearch(event)" onkeydown="handleSymbolSearchKey(event)" autocomplete="off" />
             <span class="search-icon">🔍</span>
           </div>
           <div id="search-results" class="search-results"></div>

@@ -28,6 +28,8 @@ async function init() {
   renderAll();
   applySettings(state.settings);
   updateMuteBtn();
+  // Update profile badge on startup
+  updateNavBadge('profiles', userProfiles.length);
 
   // Load market index bar
   loadMarketIndex();
@@ -155,6 +157,7 @@ function navigate(view) {
     case 'history': renderHistory(); break;
     case 'news': renderLatestNews(); break;
     case 'saved-news': renderSavedNews(); break;
+    case 'profiles': renderProfiles(); break;
     case 'crypto': renderCryptoDashboard(); break;
     case 'settings': renderSettings(); break;
   }
@@ -870,6 +873,7 @@ function updateStockCard(symbol) {
    ─────────────────────────────────────────────────────────────── */
 const _hoverTimers = new WeakMap();
 function _scheduleShow(cardEl, showFn, delay = 500) {
+  if (editMode || state.cryptoEditMode) return; // suppress popups during edit mode
   let t = _hoverTimers.get(cardEl) || {};
   clearTimeout(t.hide); t.hide = null;
   if (!t.show) t.show = setTimeout(() => { t.show = null; _hoverTimers.set(cardEl, t); showFn(); }, delay);
@@ -1161,8 +1165,94 @@ function renderSettings() {
   el('setting-twilio-token').placeholder = s.hasTwilioCredentials ? '••••••• (saved)' : 'Twilio Auth Token';
   toggleSmsFields();
   renderXHandles();
+  renderCustomFeedsOnSettingsOpen();
 }
 function applySettings(s) { const el = document.getElementById('setting-interval'); if (el) el.value = s.checkIntervalMinutes || 1; }
+
+/* ─── CUSTOM FEEDS ────────────────────────────────────────────── */
+let customFeeds = JSON.parse(localStorage.getItem('customFeeds') || '[]');
+let _activeFeedTab = 'website';
+
+const FEED_TAB_CONFIG = {
+  website: { label: 'Site Name', urlLabel: 'URL', placeholder: 'e.g. Seeking Alpha', urlPlaceholder: 'https://seekingalpha.com', icon: '🌐' },
+  reddit: { label: 'Subreddit', urlLabel: 'Subreddit URL or Name', placeholder: 'e.g. r/wallstreetbets', urlPlaceholder: 'https://www.reddit.com/r/investing/', icon: '🟠' },
+  substack: { label: 'Newsletter Name', urlLabel: 'Substack URL', placeholder: 'e.g. The Diff', urlPlaceholder: 'https://thediff.co/', icon: '📬' },
+};
+
+function switchFeedTab(type) {
+  _activeFeedTab = type;
+  document.querySelectorAll('.feed-tab').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+  const cfg = FEED_TAB_CONFIG[type];
+  const nameLabel = document.getElementById('feed-name-label');
+  const urlLabel = document.getElementById('feed-url-label');
+  const nameInput = document.getElementById('feed-name');
+  const urlInput = document.getElementById('feed-url');
+  if (nameLabel) nameLabel.textContent = cfg.label;
+  if (urlLabel) urlLabel.textContent = cfg.urlLabel;
+  if (nameInput) nameInput.placeholder = cfg.placeholder;
+  if (urlInput) urlInput.placeholder = cfg.urlPlaceholder;
+  renderCustomFeeds();
+}
+
+function toggleFeedCreds() {
+  const show = document.getElementById('feed-save-creds')?.checked;
+  const grp = document.getElementById('feed-credentials-group');
+  if (grp) grp.style.display = show ? 'block' : 'none';
+}
+
+function addCustomFeed() {
+  const name = document.getElementById('feed-name')?.value.trim();
+  const url = document.getElementById('feed-url')?.value.trim();
+  if (!name || !url) { showErrorToast('Name and URL are required'); return; }
+  const saveCreds = document.getElementById('feed-save-creds')?.checked;
+  const feed = {
+    id: Date.now().toString(),
+    type: _activeFeedTab,
+    name,
+    url: url.startsWith('http') ? url : 'https://' + url,
+    notes: document.getElementById('feed-notes')?.value.trim() || '',
+    createdAt: new Date().toISOString(),
+  };
+  if (saveCreds) {
+    feed.loginEmail = document.getElementById('feed-login-email')?.value.trim() || '';
+    feed.loginPassword = document.getElementById('feed-login-password')?.value || '';
+  }
+  customFeeds.unshift(feed);
+  localStorage.setItem('customFeeds', JSON.stringify(customFeeds));
+  // Clear form
+  ['feed-name','feed-url','feed-notes','feed-login-email','feed-login-password'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderCustomFeeds();
+  showSuccessToast(`"${name}" added`);
+}
+
+function removeCustomFeed(id) {
+  customFeeds = customFeeds.filter(f => f.id !== id);
+  localStorage.setItem('customFeeds', JSON.stringify(customFeeds));
+  renderCustomFeeds();
+}
+
+function renderCustomFeeds() {
+  const container = document.getElementById('custom-feeds-list');
+  if (!container) return;
+  const filtered = customFeeds.filter(f => f.type === _activeFeedTab);
+  if (!filtered.length) {
+    container.innerHTML = `<p style="font-size:12px;color:var(--text-dim);padding:8px 0">No ${_activeFeedTab === 'reddit' ? 'subreddits' : _activeFeedTab === 'substack' ? 'newsletters' : 'websites'} added yet.</p>`;
+    return;
+  }
+  container.innerHTML = filtered.map(f => `
+    <div class="feed-item">
+      <div class="feed-item-info">
+        <a href="${f.url}" target="_blank" rel="noopener" class="feed-item-name">${FEED_TAB_CONFIG[f.type]?.icon || '🔗'} ${f.name}</a>
+        ${f.notes ? `<span class="feed-item-notes">${f.notes}</span>` : ''}
+        ${f.loginEmail ? `<span class="feed-item-creds">🔑 ${f.loginEmail}</span>` : ''}
+      </div>
+      <button class="btn-danger-sm" onclick="removeCustomFeed('${f.id}')">✕</button>
+    </div>`).join('');
+}
+
+function renderCustomFeedsOnSettingsOpen() {
+  renderCustomFeeds();
+}
 function setVal(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
 function toggleEmailFields() { const on = document.getElementById('setting-email-enabled').checked; const f = document.getElementById('email-fields'); f.style.opacity = on ? '1' : '.4'; f.style.pointerEvents = on ? 'all' : 'none'; }
 function toggleSmsFields() { const on = document.getElementById('setting-sms-enabled').checked; const f = document.getElementById('sms-fields'); f.style.opacity = on ? '1' : '.4'; f.style.pointerEvents = on ? 'all' : 'none'; }
@@ -1284,8 +1374,42 @@ function handleSymbolSearch(e) {
   clearTimeout(state.searchTimeout);
   const q = e.target.value.trim();
   document.getElementById('search-results').innerHTML = '';
+  state._searchHiIdx = -1;
   if (q.length < 1) return;
   state.searchTimeout = setTimeout(() => performSearch(q), 280);
+}
+
+function handleSymbolSearchKey(e) {
+  const container = document.getElementById('search-results');
+  const items = Array.from(container.querySelectorAll('.search-result-item[onclick]'));
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    state._searchHiIdx = Math.min((state._searchHiIdx ?? -1) + 1, items.length - 1);
+    _highlightSearchItem(items, state._searchHiIdx);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    state._searchHiIdx = Math.max((state._searchHiIdx ?? 0) - 1, 0);
+    _highlightSearchItem(items, state._searchHiIdx);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const idx = state._searchHiIdx ?? -1;
+    if (idx >= 0 && items[idx]) {
+      items[idx].click();
+    } else if (items[0]) {
+      items[0].click();
+    }
+  } else if (e.key === 'Escape') {
+    container.innerHTML = '';
+    state._searchHiIdx = -1;
+  }
+}
+
+function _highlightSearchItem(items, idx) {
+  items.forEach((el, i) => {
+    el.classList.toggle('highlighted', i === idx);
+    if (i === idx) el.scrollIntoView({ block: 'nearest' });
+  });
 }
 
 async function performSearch(q) {
@@ -2058,24 +2182,48 @@ function toggleEditMode() {
   if (editMode) {
     grid.classList.add('edit-mode');
     if (btn) { btn.textContent = '✅ Done'; btn.classList.add('active-edit'); }
+    // Close any open popups immediately
+    document.querySelectorAll('.popup-open').forEach(c => c.classList.remove('popup-open'));
     addEditModeHandlers();
   } else {
     grid.classList.remove('edit-mode');
     if (btn) { btn.textContent = '✏️ Edit'; btn.classList.remove('active-edit'); }
     document.querySelectorAll('.card-delete-btn').forEach(b => b.remove());
-    document.querySelectorAll('.stock-card').forEach(c => { c.draggable = false; c.onclick = () => showNewsModal(c.id.replace('card-', '')); });
+    // Remove drag from all draggable items across all view types
+    document.querySelectorAll('.stock-card, .rich-card, .lcw-row').forEach(c => {
+      c.draggable = false;
+      c.classList.remove('dragging', 'drag-over');
+    });
     saveCardOrder();
   }
 }
 
+function _getDraggableSelector() {
+  const mode = state.dashViewMode;
+  if (mode === 'cards') return '.rich-card';
+  if (mode === 'detailed') return '.lcw-row';
+  return '.stock-card';
+}
+
+function _getSymFromDraggable(el) {
+  const mode = state.dashViewMode;
+  if (mode === 'cards') return el.querySelector('.rich-card-symbol')?.textContent?.trim();
+  if (mode === 'detailed') return el.id.replace('lcw-stock-', '');
+  return el.id.replace('card-', '');
+}
+
 function addEditModeHandlers() {
-  document.querySelectorAll('.stock-card').forEach(card => {
-    const sym = card.id.replace('card-', '');
-    const del = document.createElement('button');
-    del.className = 'card-delete-btn';
-    del.textContent = '×';
-    del.onclick = e => { e.stopPropagation(); removeFromDashboard(sym); };
-    card.appendChild(del);
+  const sel = _getDraggableSelector();
+  document.querySelectorAll(sel).forEach(card => {
+    const sym = _getSymFromDraggable(card);
+    // Add delete button if not already present
+    if (!card.querySelector('.card-delete-btn')) {
+      const del = document.createElement('button');
+      del.className = 'card-delete-btn';
+      del.textContent = '×';
+      del.onclick = e => { e.stopPropagation(); removeFromDashboard(sym); };
+      card.appendChild(del);
+    }
     card.draggable = true;
     card.addEventListener('dragstart', onDragStart);
     card.addEventListener('dragover', onDragOver);
@@ -2088,16 +2236,21 @@ function addEditModeHandlers() {
 function onDragStart(e) { dragSrc = this; this.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
 function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; this.classList.add('drag-over'); }
 function onDragLeave() { this.classList.remove('drag-over'); }
-function onDragEnd() { this.classList.remove('dragging'); document.querySelectorAll('.stock-card').forEach(c => c.classList.remove('drag-over')); }
+function onDragEnd() {
+  this.classList.remove('dragging');
+  const sel = _getDraggableSelector();
+  document.querySelectorAll(sel).forEach(c => c.classList.remove('drag-over'));
+}
 function onDrop(e) {
   e.stopPropagation(); e.preventDefault();
   this.classList.remove('drag-over');
   if (dragSrc === this) return;
-  const grid = document.getElementById('stocks-grid');
-  const cards = [...grid.querySelectorAll('.stock-card')];
+  const parent = dragSrc.parentNode;
+  const sel = _getDraggableSelector();
+  const cards = [...parent.querySelectorAll(sel)];
   const srcIdx = cards.indexOf(dragSrc), tgtIdx = cards.indexOf(this);
-  if (srcIdx < tgtIdx) grid.insertBefore(dragSrc, this.nextSibling);
-  else grid.insertBefore(dragSrc, this);
+  if (srcIdx < tgtIdx) parent.insertBefore(dragSrc, this.nextSibling);
+  else parent.insertBefore(dragSrc, this);
 }
 
 async function saveCardOrder() {
@@ -2226,6 +2379,130 @@ function clearSavedNews() {
   const badge = document.getElementById('nav-saved-badge');
   if (badge) badge.style.display = 'none';
   renderSavedNews();
+}
+
+/* ─── SAVED USER PROFILES ────────────────────────────────────── */
+let userProfiles = JSON.parse(localStorage.getItem('userProfiles') || '[]');
+let activeProfileId = localStorage.getItem('activeProfileId') || null;
+
+function _buildProfileSnapshot(name) {
+  return {
+    id: Date.now().toString(),
+    name: name.trim(),
+    savedAt: new Date().toISOString(),
+    dashboardOrder: getDashSymbols(),
+    hiddenCryptoIds: [...state.hiddenCryptoIds],
+    pinnedCryptoIds: [...state.pinnedCryptoIds],
+    dashViewMode: state.dashViewMode,
+    cryptoViewMode: state.cryptoViewMode,
+    cryptoChartPeriod: state.cryptoChartPeriod,
+    stockChartPeriod: state.stockChartPeriod,
+    settings: { ...state.settings },
+  };
+}
+
+function showSaveProfileModal() {
+  const existing = activeProfileId ? userProfiles.find(p => p.id === activeProfileId) : null;
+  const defaultName = existing ? existing.name : `Profile ${userProfiles.length + 1}`;
+  const name = prompt('Profile name:', defaultName);
+  if (!name || !name.trim()) return;
+  // If overwriting active profile, update it; else create new
+  if (existing && name.trim() === existing.name) {
+    const idx = userProfiles.findIndex(p => p.id === existing.id);
+    userProfiles[idx] = _buildProfileSnapshot(name);
+    userProfiles[idx].id = existing.id;
+  } else {
+    userProfiles.unshift(_buildProfileSnapshot(name));
+    activeProfileId = userProfiles[0].id;
+    localStorage.setItem('activeProfileId', activeProfileId);
+  }
+  localStorage.setItem('userProfiles', JSON.stringify(userProfiles));
+  updateNavBadge('profiles', userProfiles.length);
+  showSuccessToast(`Profile "${name.trim()}" saved`);
+  if (state.view === 'profiles') renderProfiles();
+}
+
+function loadProfile(id) {
+  const p = userProfiles.find(pr => pr.id === id);
+  if (!p) return;
+  if (!confirm(`Switch to profile "${p.name}"? This will update your view settings but won't change your alerts.`)) return;
+  activeProfileId = id;
+  localStorage.setItem('activeProfileId', id);
+  // Apply stored view settings
+  if (p.dashViewMode) { state.dashViewMode = p.dashViewMode; document.querySelectorAll('#view-toggle .view-toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === p.dashViewMode)); }
+  if (p.cryptoViewMode) state.cryptoViewMode = p.cryptoViewMode;
+  if (p.cryptoChartPeriod) state.cryptoChartPeriod = p.cryptoChartPeriod;
+  if (p.stockChartPeriod) state.stockChartPeriod = p.stockChartPeriod;
+  if (p.hiddenCryptoIds) { state.hiddenCryptoIds = p.hiddenCryptoIds; localStorage.setItem('hiddenCryptoIds', JSON.stringify(p.hiddenCryptoIds)); }
+  if (p.pinnedCryptoIds) { state.pinnedCryptoIds = p.pinnedCryptoIds; localStorage.setItem('pinnedCryptoIds', JSON.stringify(p.pinnedCryptoIds)); }
+  if (p.dashboardOrder) state.settings.dashboardOrder = p.dashboardOrder;
+  showSuccessToast(`Switched to "${p.name}"`);
+  navigate('dashboard');
+}
+
+function deleteProfile(id) {
+  const p = userProfiles.find(pr => pr.id === id);
+  if (!p) return;
+  if (!confirm(`Delete profile "${p.name}"?`)) return;
+  userProfiles = userProfiles.filter(pr => pr.id !== id);
+  if (activeProfileId === id) { activeProfileId = userProfiles[0]?.id || null; localStorage.setItem('activeProfileId', activeProfileId || ''); }
+  localStorage.setItem('userProfiles', JSON.stringify(userProfiles));
+  updateNavBadge('profiles', userProfiles.length);
+  renderProfiles();
+}
+
+function renderProfiles() {
+  const container = document.getElementById('profiles-list');
+  const subtitle = document.getElementById('profiles-subtitle');
+  if (!container) return;
+  if (subtitle) subtitle.textContent = `${userProfiles.length} saved profile${userProfiles.length !== 1 ? 's' : ''} · Click to switch`;
+  updateNavBadge('profiles', userProfiles.length);
+  if (!userProfiles.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div><h3>No saved profiles yet</h3><p>Click <strong>💾 Save Current Profile</strong> to save your current watchlist, view settings, and crypto preferences.</p></div>`;
+    return;
+  }
+  container.innerHTML = userProfiles.map(p => {
+    const isActive = p.id === activeProfileId;
+    const date = new Date(p.savedAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const symbols = (p.dashboardOrder || []).slice(0, 8).join(', ') + ((p.dashboardOrder || []).length > 8 ? '…' : '');
+    return `
+      <div class="profile-card${isActive ? ' profile-active' : ''}">
+        <div class="profile-card-header">
+          <div>
+            <div class="profile-name">${isActive ? '✅ ' : ''}${p.name}</div>
+            <div class="profile-meta">Saved ${date}</div>
+          </div>
+          <div class="profile-actions">
+            <button class="btn-sm-add" onclick="loadProfile('${p.id}')" ${isActive ? 'disabled title="Already active"' : ''}>
+              ${isActive ? 'Active' : '▶ Load'}
+            </button>
+            <button class="btn-secondary" onclick="showOverwriteProfile('${p.id}')">💾 Update</button>
+            <button class="btn-danger-sm" onclick="deleteProfile('${p.id}')">✕</button>
+          </div>
+        </div>
+        <div class="profile-details">
+          <span class="profile-tag">📊 ${p.dashViewMode || 'grid'}</span>
+          <span class="profile-tag">₿ ${p.cryptoViewMode || 'grid'}</span>
+          <span class="profile-tag">📈 ${(p.dashboardOrder || []).length} stocks</span>
+          <span class="profile-tag">🙈 ${(p.hiddenCryptoIds || []).length} hidden</span>
+          <span class="profile-tag">📌 ${(p.pinnedCryptoIds || []).length} pinned</span>
+        </div>
+        ${symbols ? `<div class="profile-symbols">${symbols}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function showOverwriteProfile(id) {
+  const p = userProfiles.find(pr => pr.id === id);
+  if (!p) return;
+  if (!confirm(`Update profile "${p.name}" with current settings?`)) return;
+  const idx = userProfiles.findIndex(pr => pr.id === id);
+  const updated = _buildProfileSnapshot(p.name);
+  updated.id = id;
+  userProfiles[idx] = updated;
+  localStorage.setItem('userProfiles', JSON.stringify(userProfiles));
+  showSuccessToast(`"${p.name}" updated`);
+  renderProfiles();
 }
 
 // All known sources (update tabs dynamically)
@@ -2758,8 +3035,56 @@ async function loadCryptoPopupChart(id, range, btnEl, popupId) {
 function toggleCryptoEditMode() {
   state.cryptoEditMode = !state.cryptoEditMode;
   const btn = document.getElementById('crypto-edit-mode-btn');
-  if (btn) { btn.classList.toggle('active-edit', state.cryptoEditMode); btn.textContent = state.cryptoEditMode ? '✓ Done' : '✏️ Edit'; }
+  const grid = document.getElementById('crypto-grid');
+  if (btn) { btn.classList.toggle('active-edit', state.cryptoEditMode); btn.textContent = state.cryptoEditMode ? '✅ Done' : '✏️ Edit'; }
+  if (state.cryptoEditMode) {
+    // Close any open popups immediately
+    document.querySelectorAll('.popup-open').forEach(c => c.classList.remove('popup-open'));
+    document.querySelectorAll('.crypto-hover-popup.visible').forEach(p => p.classList.remove('visible'));
+    if (grid) grid.classList.add('edit-mode');
+  } else {
+    if (grid) grid.classList.remove('edit-mode');
+    document.querySelectorAll('.crypto-compact-card, .crypto-card, #crypto-grid .lcw-row').forEach(c => {
+      c.draggable = false; c.classList.remove('dragging', 'drag-over');
+    });
+    document.querySelectorAll('#crypto-grid .card-delete-btn').forEach(b => b.remove());
+  }
   renderCryptoDashboard();
+  if (state.cryptoEditMode) {
+    _addCryptoEditDragHandlers();
+    if (grid) grid.classList.add('edit-mode'); // re-add after re-render
+  }
+}
+
+function _addCryptoEditDragHandlers() {
+  const mode = state.cryptoViewMode;
+  const sel = mode === 'compact' ? '.crypto-compact-card' : mode === 'detailed' ? '.lcw-row' : '.crypto-card';
+  const grid = document.getElementById('crypto-grid');
+  if (!grid) return;
+  grid.querySelectorAll(sel).forEach(card => {
+    card.draggable = true;
+    card.addEventListener('dragstart', _cryptoDragStart);
+    card.addEventListener('dragover', _cryptoDragOver);
+    card.addEventListener('dragleave', _cryptoDragLeave);
+    card.addEventListener('drop', _cryptoDrop);
+    card.addEventListener('dragend', _cryptoDragEnd);
+  });
+}
+
+let _cryptoDragSrc = null;
+function _cryptoDragStart(e) { _cryptoDragSrc = this; this.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
+function _cryptoDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; this.classList.add('drag-over'); }
+function _cryptoDragLeave() { this.classList.remove('drag-over'); }
+function _cryptoDragEnd() { this.classList.remove('dragging', 'drag-over'); document.querySelectorAll('.drag-over').forEach(c => c.classList.remove('drag-over')); }
+function _cryptoDrop(e) {
+  e.stopPropagation(); e.preventDefault();
+  this.classList.remove('drag-over');
+  if (_cryptoDragSrc === this) return;
+  const parent = _cryptoDragSrc.parentNode;
+  const all = [...parent.children].filter(c => c !== parent.querySelector('.lcw-header'));
+  const srcIdx = all.indexOf(_cryptoDragSrc), tgtIdx = all.indexOf(this);
+  if (srcIdx < tgtIdx) parent.insertBefore(_cryptoDragSrc, this.nextSibling);
+  else parent.insertBefore(_cryptoDragSrc, this);
 }
 
 function hideCryptoCoin(id) {
