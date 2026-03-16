@@ -1083,30 +1083,31 @@ html, body {
 .rich-card .stock-card-detail { border-radius: var(--radius); }
 
 /* ─── LIVECOINWATCH-STYLE TABLE (lcw-table) ──────────────────── */
-.lcw-table { width: 100%; border-radius: 10px; overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border); min-width: 900px; }
+.lcw-table-scroll-wrap { width: 100%; overflow-x: auto; }
+.lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 1060px; }
 
-/* Base crypto table: #, icon, coin, price, ATH, ToATH, 1H, 24H, 7D, 30D, ~6M, 1Y, chart, mcap, vol */
+/* Base crypto table: #, ★icon, coin, price, ATH, ToATH, 1H, 24H, 7D, 30D, ~6M, 1Y, chart, mcap, vol */
 .lcw-header {
   display: grid;
-  grid-template-columns: 36px 26px 1fr 0.85fr 85px 58px repeat(6, 54px) 200px 82px 76px;
+  grid-template-columns: 36px 46px 1fr 92px 85px 58px repeat(6, 54px) 200px 82px 76px;
   gap: 0; padding: 10px 12px; font-size: 10px; font-weight: 800;
   color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px;
   background: var(--card); border-bottom: 2px solid var(--border);
 }
 /* Stock table: #, stock, price, 1D, 7D, 1M, 3M, YTD, 1Y, 2Y, 3Y, chart, mcap, vol */
 .lcw-stock .lcw-header {
-  grid-template-columns: 36px 100px 62px repeat(8, 52px) 1fr 78px 70px;
+  grid-template-columns: 36px 100px 76px repeat(8, 52px) 1fr 78px 70px;
 }
 
 .lcw-row {
   display: grid;
-  grid-template-columns: 36px 26px 1fr 0.85fr 85px 58px repeat(6, 54px) 200px 82px 76px;
+  grid-template-columns: 36px 46px 1fr 92px 85px 58px repeat(6, 54px) 200px 82px 76px;
   gap: 0; padding: 7px 12px; align-items: center;
   border-bottom: 1px solid #1c2128; background: var(--surface);
   font-size: 12px; transition: background .1s; cursor: pointer;
 }
 .lcw-stock .lcw-row {
-  grid-template-columns: 36px 100px 62px repeat(8, 52px) 1fr 78px 70px;
+  grid-template-columns: 36px 100px 76px repeat(8, 52px) 1fr 78px 70px;
 }
 .lcw-ath { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
 .lcw-row:hover { background: #1c2128; }
@@ -1819,6 +1820,32 @@ html, body {
 /* ── Detailed Table Header Bar (kept for backward compat, hidden) ── */
 .lcw-table-header-bar { display: none; }
 .lcw-table-chart-label { display: none; }
+
+/* ── Crypto Filter Tabs ── */
+.crypto-filter-tabs {
+  display: flex; gap: 4px; margin-right: 6px;
+}
+.crypto-filter-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  padding: 5px 11px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  font-weight: 600; font-family: inherit; transition: all .15s;
+}
+.crypto-filter-btn:hover { background: var(--card); color: var(--text); }
+.crypto-filter-btn.active { background: rgba(88,166,255,.15); border-color: var(--blue); color: var(--blue); }
+
+/* ── Crypto Star / Favorite Button ── */
+.crypto-star-btn {
+  background: none; border: none; cursor: pointer; font-size: 14px;
+  color: var(--text-dim); line-height: 1; padding: 0 1px;
+  transition: color .15s, transform .15s; position: absolute;
+  top: -4px; left: -2px; z-index: 1;
+}
+.crypto-star-btn:hover { color: #f0c040; transform: scale(1.2); }
+.crypto-star-btn.starred { color: #f0c040; }
+.crypto-star-btn.starred::before { content: '★'; }
+.crypto-star-btn:not(.starred)::before { content: '☆'; }
+.crypto-star-btn { font-size: 0; } /* hide text node */
+.crypto-star-btn::before { font-size: 13px; }
 
 /* ── Sector Customize dropdown ── */
 .cust-dropdown-wrap { display: flex; gap: 8px; align-items: center; }

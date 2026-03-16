@@ -3,15 +3,20 @@ const state = {
   alerts: [], stocks: {}, history: [], settings: {},
   profiles: {}, hoverCache: {},
   view: 'dashboard', selectedSymbol: null, searchTimeout: null,
-  dashViewMode: 'grid', cryptoViewMode: 'grid', cryptoData: [],
+  dashViewMode: 'grid', cryptoViewMode: 'detailed', cryptoData: [],
   cryptoEditMode: false, cryptoChartPeriod: '7d', cryptoCharts: {},
   hiddenCryptoIds: JSON.parse(localStorage.getItem('hiddenCryptoIds') || '[]'),
   pinnedCryptoIds: JSON.parse(localStorage.getItem('pinnedCryptoIds') || '[]'),
+  favoriteCryptoIds: JSON.parse(localStorage.getItem('favoriteCryptoIds') || '[]'),
+  cryptoFilterMode: localStorage.getItem('cryptoFilterMode') || 'default',
   stockChartPeriod: '1mo', stockCharts: {},
   alertsMuted: localStorage.getItem('alertsMuted') === 'true',
 };
 let socket = null;
 const NUM_CONDITION_ROWS = 6;
+
+// Default 16 coins shown until user switches to "All"
+const DEFAULT_CRYPTO_SYMBOLS = ['BTC','ETH','BNB','XRP','SOL','DOGE','HYPE','XMR','ZEC','SUI','TON','UNI','TAO','NEAR','AAVE','PAXG'];
 
 /* ─── INIT ────────────────────────────────────────────────────── */
 async function init() {
@@ -61,6 +66,37 @@ async function _preloadStockCharts() {
       state.stockCharts[sym][period] = (data.dataPoints || []).map(p => p.close);
     } catch {}
     await new Promise(r => setTimeout(r, 300)); // gentle rate-limit
+  }
+}
+
+async function _preload6MChange(coins) {
+  for (const c of coins) {
+    if (c.change6m != null) continue; // already computed
+    if (state.cryptoCharts[c.id]?.['180d']?.length >= 2) {
+      const prices = state.cryptoCharts[c.id]['180d'];
+      c.change6m = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+      const pctEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-6m-col`);
+      if (pctEl) {
+        const d = c.change6m >= 0 ? 'up' : 'down';
+        pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`;
+        pctEl.textContent = `${c.change6m >= 0 ? '+' : ''}${c.change6m.toFixed(2)}%`;
+      }
+      continue;
+    }
+    try {
+      const prices = await api('GET', `/crypto/${c.id}/chart?range=180d`);
+      if (!Array.isArray(prices) || prices.length < 2) continue;
+      if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+      state.cryptoCharts[c.id]['180d'] = prices;
+      c.change6m = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+      const pctEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-6m-col`);
+      if (pctEl) {
+        const d = c.change6m >= 0 ? 'up' : 'down';
+        pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`;
+        pctEl.textContent = `${c.change6m >= 0 ? '+' : ''}${c.change6m.toFixed(2)}%`;
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 2000)); // CoinGecko/CryptoCompare rate limit
   }
 }
 
@@ -718,7 +754,7 @@ function calc52wPct(price, low, high) {
 /* ─── STOCK DETAILED TABLE (Dashboard 3 — livecoinwatch style) ── */
 function buildStockDetailedTable(symbols) {
   const period = state.stockChartPeriod || '1mo';
-  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y'],['5y','5Y']].map(([p, label]) =>
+  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y']].map(([p, label]) =>
     `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="event.stopPropagation();setStockChartPeriod('${p}')">${label}</button>`
   ).join('');
   return `
@@ -2160,7 +2196,7 @@ async function showStockDetailPopup(symbol) {
     }
 
     // Interactive chart section at the top
-    const chartRanges = [['1d','1D'],['5d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y'],['5y','5Y']];
+    const chartRanges = [['1d','1D'],['5d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y']];
     const chartHtml = `
       <div class="chart-section" style="margin-bottom:12px;padding:4px">
         <div class="chart-period-buttons" id="chart-periods-${symbol}" style="justify-content:flex-start">
@@ -2871,8 +2907,21 @@ async function renderCryptoDashboard() {
   const subtitle = document.getElementById('crypto-subtitle');
   if (subtitle) subtitle.textContent = `${state.cryptoData.length} coins · Updated ${new Date().toLocaleTimeString()}`;
 
-  const visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
+  // Apply filter mode
+  let visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
+  if (state.cryptoFilterMode === 'favorites') {
+    visibleCoins = visibleCoins.filter(c => state.favoriteCryptoIds.includes(c.id));
+  } else if (state.cryptoFilterMode === 'default') {
+    visibleCoins = visibleCoins.filter(c => DEFAULT_CRYPTO_SYMBOLS.includes(c.symbol.toUpperCase()));
+    // Fallback: if no matches (API returned different symbols), show all
+    if (!visibleCoins.length) visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
+  }
+  // Sort by rank (market ranking order)
+  visibleCoins = visibleCoins.sort((a, b) => (a.rank || 999) - (b.rank || 999));
+  _updateCryptoFilterBtns();
   const mode = state.cryptoViewMode;
+  // Lazy-load 6M change data in background for visible coins (first 16)
+  setTimeout(() => _preload6MChange(visibleCoins.slice(0, 16)), 1500);
   const newsSection = document.getElementById('crypto-news-section');
 
   if (mode === 'detailed') {
@@ -3295,13 +3344,19 @@ function buildCryptoDetailedTable(coins) {
     // Popup container
     const popup = `<div class="crypto-hover-popup" id="crypto-tbl-hover-${c.id}"></div>`;
 
+    const isFav = state.favoriteCryptoIds?.includes(c.id);
     return `
       <div class="lcw-row" id="lcw-crypto-${c.id}"
            onmouseenter="_scheduleShow(this,()=>showCryptoTableHover('${c.id}',this),300)"
            onmouseleave="_scheduleHide(this,()=>hideCryptoTableHover(this))"
            onclick="openCryptoDetailModal('${c.id}')">
         <div class="lcw-col lcw-rank">${c.rank || ''}</div>
-        <div class="lcw-col lcw-crypto-icon"><img class="crypto-icon" src="${c.image}" alt="${c.symbol}" onerror="this.style.display='none'" /></div>
+        <div class="lcw-col lcw-crypto-icon" style="position:relative">
+          <button class="crypto-star-btn${isFav ? ' starred' : ''}" data-id="${c.id}"
+            onclick="event.stopPropagation();toggleCryptoFavorite('${c.id}')"
+            title="${isFav ? 'Remove from favorites' : 'Add to favorites'}">☆</button>
+          <img class="crypto-icon" src="${c.image}" alt="${c.symbol}" onerror="this.style.display='none'" />
+        </div>
         <div class="lcw-col lcw-coin">
           <span class="lcw-symbol">${c.symbol}</span>
           <span class="lcw-name">${c.name}</span>
@@ -3313,7 +3368,7 @@ function buildCryptoDetailedTable(coins) {
         ${fmtPctCell(c.change24h)}
         ${fmtPctCell(c.change7d)}
         ${fmtPctCell(c.change30d)}
-        ${fmtPctCell(c.change200d)}
+        <div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}">${(c.change6m ?? c.change200d) != null ? `${(c.change6m ?? c.change200d) >= 0 ? '+' : ''}${(c.change6m ?? c.change200d).toFixed(2)}%` : '—'}</div>
         ${fmtPctCell(c.change1y)}
         <div class="lcw-col lcw-chart" id="crypto-chart-${c.id}">${sparkSvg}</div>
         <div class="lcw-col lcw-mcap">${mcap}</div>
@@ -3322,11 +3377,12 @@ function buildCryptoDetailedTable(coins) {
       </div>`;
   }).join('');
 
-  const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M'],['ytd','YTD'],['365d','1Y'],['730d','2Y']].map(([p, label]) =>
+  const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M'],['180d','6M'],['365d','1Y'],['730d','2Y']].map(([p, label]) =>
     `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="event.stopPropagation();setCryptoChartPeriod('${p}')">${label}</button>`
   ).join('');
 
   return `
+    <div class="lcw-table-scroll-wrap">
     <div class="lcw-table lcw-crypto-table">
       <div class="lcw-header">
         <div class="lcw-col lcw-rank">#</div>
@@ -3346,6 +3402,7 @@ function buildCryptoDetailedTable(coins) {
         <div class="lcw-col lcw-vol">Volume</div>
       </div>
       ${rows}
+    </div>
     </div>`;
 }
 
@@ -3495,12 +3552,17 @@ async function setCryptoChartPeriod(period) {
   state.cryptoChartPeriod = period;
   // Update period button states without re-rendering the whole table
   document.querySelectorAll('.lcw-crypto-table .chart-period-btn').forEach(b => {
-    b.classList.toggle('active', b.textContent.toLowerCase() === period);
+    b.classList.toggle('active', b.dataset.period === period || b.textContent === period.replace('d','D').replace('365d','1Y').replace('730d','2Y'));
   });
   if (state.cryptoViewMode !== 'detailed') return;
 
-  // For 7d, already have sparkline data — just swap charts in DOM
-  const visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
+  // Use all coins that are currently visible in the table
+  let visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
+  if (state.cryptoFilterMode === 'favorites') visibleCoins = visibleCoins.filter(c => state.favoriteCryptoIds.includes(c.id));
+  else if (state.cryptoFilterMode === 'default') {
+    const filtered = visibleCoins.filter(c => DEFAULT_CRYPTO_SYMBOLS.includes(c.symbol.toUpperCase()));
+    if (filtered.length) visibleCoins = filtered;
+  }
   if (period === '7d') {
     visibleCoins.forEach(c => {
       const cell = document.getElementById(`crypto-chart-${c.id}`);
@@ -3537,6 +3599,18 @@ async function setCryptoChartPeriod(period) {
       if (!Array.isArray(prices) || !prices.length) throw new Error('empty');
       if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
       state.cryptoCharts[c.id][period] = prices;
+      // Compute 6M change from 180d chart data and cache it in coin object
+      if (period === '180d' && prices.length >= 2) {
+        const change6m = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+        const coinRef = state.cryptoData.find(x => x.id === c.id);
+        if (coinRef) coinRef.change6m = change6m;
+        const pctEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-6m-col`);
+        if (pctEl) {
+          const d = change6m >= 0 ? 'up' : 'down';
+          pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`;
+          pctEl.textContent = `${change6m >= 0 ? '+' : ''}${change6m.toFixed(2)}%`;
+        }
+      }
       if (state.cryptoChartPeriod !== period) return; // user switched again
       const cell = document.getElementById(`crypto-chart-${c.id}`);
       if (cell) {
@@ -3561,6 +3635,34 @@ function switchCryptoView(mode) {
 async function refreshCrypto() {
   state.cryptoData = [];
   await renderCryptoDashboard();
+}
+
+/* ─── CRYPTO FILTER MODE ─────────────────────────────────────── */
+function setCryptoFilterMode(mode) {
+  state.cryptoFilterMode = mode;
+  localStorage.setItem('cryptoFilterMode', mode);
+  _updateCryptoFilterBtns();
+  renderCryptoDashboard();
+}
+
+function _updateCryptoFilterBtns() {
+  document.querySelectorAll('.crypto-filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === state.cryptoFilterMode);
+  });
+}
+
+/* ─── CRYPTO FAVORITES (STAR) ────────────────────────────────── */
+function toggleCryptoFavorite(id) {
+  if (!state.favoriteCryptoIds) state.favoriteCryptoIds = [];
+  const idx = state.favoriteCryptoIds.indexOf(id);
+  if (idx >= 0) state.favoriteCryptoIds.splice(idx, 1);
+  else state.favoriteCryptoIds.push(id);
+  localStorage.setItem('favoriteCryptoIds', JSON.stringify(state.favoriteCryptoIds));
+  // Update star button without full re-render
+  document.querySelectorAll(`.crypto-star-btn[data-id="${id}"]`).forEach(btn => {
+    btn.classList.toggle('starred', state.favoriteCryptoIds.includes(id));
+    btn.title = state.favoriteCryptoIds.includes(id) ? 'Remove from favorites' : 'Add to favorites';
+  });
 }
 
 /* ─── STOCK CHART PERIOD ─────────────────────────────────────── */

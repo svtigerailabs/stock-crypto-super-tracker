@@ -272,12 +272,18 @@
     <div class="view-header">
       <div>
         <h1 class="view-title">Crypto Dashboard</h1>
+        <p class="view-subtitle" id="crypto-subtitle">Loading…</p>
       </div>
       <div class="header-actions">
+        <div class="crypto-filter-tabs">
+          <button class="crypto-filter-btn active" data-mode="default" onclick="setCryptoFilterMode('default')" title="Show default 16 coins">🏠 Default</button>
+          <button class="crypto-filter-btn" data-mode="favorites" onclick="setCryptoFilterMode('favorites')" title="Show starred coins">⭐ Favorites</button>
+          <button class="crypto-filter-btn" data-mode="all" onclick="setCryptoFilterMode('all')" title="Show all coins by rank">📊 All</button>
+        </div>
         <div class="view-toggle" id="crypto-view-toggle">
           <button class="view-toggle-btn" data-mode="compact" onclick="switchCryptoView('compact')" title="Compact Grid">⊟</button>
-          <button class="view-toggle-btn active" data-mode="grid" onclick="switchCryptoView('grid')" title="Card View">⊞</button>
-          <button class="view-toggle-btn" data-mode="detailed" onclick="switchCryptoView('detailed')" title="Detailed Table">📋</button>
+          <button class="view-toggle-btn" data-mode="grid" onclick="switchCryptoView('grid')" title="Card View">⊞</button>
+          <button class="view-toggle-btn active" data-mode="detailed" onclick="switchCryptoView('detailed')" title="Detailed Table">📋</button>
         </div>
         <button class="btn-sm-edit" id="crypto-edit-mode-btn" onclick="toggleCryptoEditMode()">✏️ Edit</button>
         <button class="btn-secondary" onclick="refreshCrypto()">🔄 Refresh</button>

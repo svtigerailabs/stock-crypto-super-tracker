@@ -1001,7 +1001,7 @@ async function fetchCryptoData() {
   if (cryptoCache.data && (Date.now() - cryptoCache.fetchedAt) < CRYPTO_CACHE_TTL) return cryptoCache.data;
 
   try {
-    const url = 'https://api.coinpaprika.com/v1/tickers?limit=50&quotes=USD';
+    const url = 'https://api.coinpaprika.com/v1/tickers?limit=200&quotes=USD';
     const res = await fetch(url, {
       headers: { 'Accept': 'application/json', 'User-Agent': 'StockCryptoSuperTracker/1.0' },
       signal: AbortSignal.timeout(10000)
@@ -1068,6 +1068,30 @@ if (fs.existsSync(DATA_FILE)) {
     notificationHistory = data.notificationHistory || [];
     console.log(`✅ Loaded ${alerts.length} alert(s) from storage`);
   } catch (e) { console.error('⚠️  Error loading data:', e.message); }
+}
+
+// Seed default watchlist on very first run (no alerts yet)
+if (alerts.length === 0) {
+  const DEFAULT_STOCKS = ['TSLA','NVDA','AVGO','PLTR','GOOGL','AAPL','AMZN','MSTR','BTC-USD','GLXY'];
+  DEFAULT_STOCKS.forEach((sym, i) => {
+    alerts.push({
+      id: `default_${i}_${Date.now()}`,
+      symbol: sym,
+      conditionType: 'percent_down',
+      conditionValue: 10,
+      isActive: true,
+      notifyPopup: true,
+      notifyEmail: false,
+      notifySms: false,
+      repeatAlert: true,
+      createdAt: new Date().toISOString(),
+    });
+  });
+  try {
+    const data = fs.existsSync(DATA_FILE) ? JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) : {};
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ ...data, alerts }, null, 2));
+    console.log(`🌱 Seeded ${DEFAULT_STOCKS.length} default watchlist symbols`);
+  } catch (e) { console.error('Error seeding defaults:', e.message); }
 }
 
 function saveData() {
@@ -1157,7 +1181,7 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
       const json = await r.json();
       prices = (json.Data?.Data || []).map(d => d.close).filter(v => v > 0);
     } else {
-      const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 365, '2y': 365 };
+      const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730 };
       const limit = LIMIT_MAP[range];
       if (!limit) return res.status(400).json({ error: 'Invalid range' });
       const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&limit=${limit}`;
