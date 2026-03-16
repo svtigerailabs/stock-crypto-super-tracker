@@ -685,7 +685,7 @@ async function fetchLatestNews(watchedSymbols = [], xHandles = [], forceRefresh 
   return result;
 }
 
-// ─── CRYPTO (CoinGecko free API) ──────────────────────────────────────────
+// ─── CRYPTO (Coinpaprika free API — no key needed, cloud-friendly) ───────────
 const cryptoCache = { data: null, fetchedAt: 0 };
 const CRYPTO_CACHE_TTL = 2 * 60 * 1000; // 2 min
 
@@ -693,33 +693,38 @@ async function fetchCryptoData() {
   if (cryptoCache.data && (Date.now() - cryptoCache.fetchedAt) < CRYPTO_CACHE_TTL) return cryptoCache.data;
 
   try {
-    const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=true&price_change_percentage=1h%2C24h%2C7d%2C30d%2C200d%2C1y';
-    const cgHeaders = { 'Accept': 'application/json' };
-    if (process.env.COINGECKO_API_KEY) cgHeaders['x-cg-demo-api-key'] = process.env.COINGECKO_API_KEY;
-    const res = await fetch(url, { headers: cgHeaders, signal: AbortSignal.timeout(10000) });
-    if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
+    const url = 'https://api.coinpaprika.com/v1/tickers?limit=50&quotes=USD';
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'StockCryptoSuperTracker/1.0' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!res.ok) throw new Error(`Coinpaprika HTTP ${res.status}`);
     const data = await res.json();
-    const result = data.map(c => ({
-      id: c.id,
-      symbol: c.symbol.toUpperCase(),
-      name: c.name,
-      image: c.image,
-      price: c.current_price,
-      change1h: c.price_change_percentage_1h_in_currency,
-      change24h: c.price_change_percentage_24h_in_currency,
-      change7d: c.price_change_percentage_7d_in_currency,
-      change30d: c.price_change_percentage_30d_in_currency ?? null,
-      change200d: c.price_change_percentage_200d_in_currency ?? null,
-      change1y: c.price_change_percentage_1y_in_currency ?? null,
-      marketCap: c.market_cap,
-      volume24h: c.total_volume,
-      rank: c.market_cap_rank,
-      sparkline: c.sparkline_in_7d?.price || [],
-      high24h: c.high_24h,
-      low24h: c.low_24h,
-      ath: c.ath,
-      athChangePercent: c.ath_change_percentage,
-    }));
+    const result = data.map(c => {
+      const q = c.quotes?.USD || {};
+      const athPct = (q.price && q.ath_price) ? ((q.price - q.ath_price) / q.ath_price * 100) : null;
+      return {
+        id: c.id,
+        symbol: c.symbol.toUpperCase(),
+        name: c.name,
+        image: `https://static.coinpaprika.com/coin/${c.id}/logo.png`,
+        price: q.price,
+        change1h: q.percent_change_1h ?? null,
+        change24h: q.percent_change_24h ?? null,
+        change7d: q.percent_change_7d ?? null,
+        change30d: q.percent_change_30d ?? null,
+        change200d: null,
+        change1y: q.percent_change_1y ?? null,
+        marketCap: q.market_cap,
+        volume24h: q.volume_24h,
+        rank: c.rank,
+        sparkline: [],
+        high24h: null,
+        low24h: null,
+        ath: q.ath_price ?? null,
+        athChangePercent: athPct,
+      };
+    });
     cryptoCache.data = result;
     cryptoCache.fetchedAt = Date.now();
     return result;
@@ -826,34 +831,34 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   const { id } = req.params;
   const { range = '7d' } = req.query;
   const now = new Date();
-  const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
-  const DAYS_MAP = { '1d': 1, '7d': 7, '30d': 30, '90d': 90, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730 };
-  const days = DAYS_MAP[range];
-  if (!days) return res.status(400).json({ error: 'Invalid range' });
   const cacheKey = `${id}_${range}`;
   const cached = cryptoChartCache[cacheKey];
   if (cached && (Date.now() - cached.at) < 10 * 60 * 1000) return res.json(cached.data);
-  const fetchCgChart = async (d) => {
-    const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${d}`;
-    const cgHdrs = { Accept: 'application/json' };
-    if (process.env.COINGECKO_API_KEY) cgHdrs['x-cg-demo-api-key'] = process.env.COINGECKO_API_KEY;
-    const r = await fetch(url, { headers: cgHdrs, signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error(`CoinGecko chart HTTP ${r.status}`);
-    const json = await r.json();
-    if (json.status?.error_code) throw new Error(json.status.error_message || 'CoinGecko error');
-    const prices = (json.prices || []).map(p => p[1]);
-    if (!prices.length) throw new Error('empty');
-    return prices;
-  };
+
   try {
-    let prices;
-    try {
-      prices = await fetchCgChart(days);
-    } catch (e) {
-      // CoinGecko free tier may not support >365 days — fall back to 365
-      if (days > 365) { prices = await fetchCgChart(365); }
-      else throw e;
+    let prices = [];
+    if (range === '1d') {
+      // Today's hourly OHLCV from Coinpaprika
+      const url = `https://api.coinpaprika.com/v1/coins/${id}/ohlcv/today`;
+      const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error(`Coinpaprika chart HTTP ${r.status}`);
+      const json = await r.json();
+      prices = json.map(d => d.close).filter(v => v != null);
+    } else {
+      // Historical daily OHLCV from Coinpaprika
+      const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
+      const DAYS_MAP = { '7d': 7, '30d': 30, '90d': 90, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 365, '2y': 365 };
+      const days = DAYS_MAP[range];
+      if (!days) return res.status(400).json({ error: 'Invalid range' });
+      const start = new Date(now - days * 86400000).toISOString().split('T')[0];
+      const end = now.toISOString().split('T')[0];
+      const url = `https://api.coinpaprika.com/v1/coins/${id}/ohlcv/historical?start=${start}&end=${end}&limit=366`;
+      const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error(`Coinpaprika chart HTTP ${r.status}`);
+      const json = await r.json();
+      prices = json.map(d => d.close).filter(v => v != null);
     }
+    if (!prices.length) throw new Error('No chart data');
     cryptoChartCache[cacheKey] = { data: prices, at: Date.now() };
     res.json(prices);
   } catch (e) { res.status(500).json({ error: e.message }); }
