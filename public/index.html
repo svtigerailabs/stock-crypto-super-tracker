@@ -22,6 +22,15 @@
     <li class="nav-item" data-view="sectors" onclick="navigate('sectors')">
       <span class="nav-icon">📊</span> Market Sectors
     </li>
+    <li class="nav-item" data-view="maps" onclick="navigate('maps')">
+      <span class="nav-icon">🗺️</span> Market Maps
+    </li>
+    <li class="nav-item" data-view="calendar" onclick="navigate('calendar')">
+      <span class="nav-icon">📅</span> Market Calendar
+    </li>
+    <li class="nav-item" data-view="screener" onclick="navigate('screener')">
+      <span class="nav-icon">🔍</span> Market Screener
+    </li>
     <li class="nav-item" data-view="crypto" onclick="navigate('crypto')">
       <span class="nav-icon">₿</span> Crypto Dashboard
     </li>
@@ -120,13 +129,50 @@
           <button class="sector-period-btn active" data-period="1D" onclick="setSectorPeriod('1D')">1D</button>
           <button class="sector-period-btn" data-period="1W" onclick="setSectorPeriod('1W')">1W</button>
           <button class="sector-period-btn" data-period="1M" onclick="setSectorPeriod('1M')">1M</button>
+          <button class="sector-period-btn" data-period="3M" onclick="setSectorPeriod('3M')">3M</button>
           <button class="sector-period-btn" data-period="YTD" onclick="setSectorPeriod('YTD')">YTD</button>
           <button class="sector-period-btn" data-period="1Y" onclick="setSectorPeriod('1Y')">1Y</button>
+          <button class="sector-period-btn" data-period="2Y" onclick="setSectorPeriod('2Y')">2Y</button>
+          <button class="sector-period-btn" data-period="5Y" onclick="setSectorPeriod('5Y')">5Y</button>
+          <button class="sector-period-btn" data-period="10Y" onclick="setSectorPeriod('10Y')">10Y</button>
         </div>
         <button class="btn-secondary" onclick="refreshSectors()">↻ Refresh</button>
       </div>
     </div>
     <div id="sectors-grid" class="sectors-grid"></div>
+  </section>
+
+  <!-- MARKET MAPS VIEW -->
+  <section id="maps-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">🗺️ Market Maps</h1>
+        <p class="view-subtitle">S&amp;P 500 heatmap by sector &amp; market cap — powered by TradingView</p>
+      </div>
+    </div>
+    <div class="tv-widget-container" id="tv-maps-container"></div>
+  </section>
+
+  <!-- MARKET CALENDAR VIEW -->
+  <section id="calendar-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">📅 Market Calendar</h1>
+        <p class="view-subtitle">Economic events, earnings &amp; central bank decisions — powered by TradingView</p>
+      </div>
+    </div>
+    <div class="tv-widget-container" id="tv-calendar-container"></div>
+  </section>
+
+  <!-- MARKET SCREENER VIEW -->
+  <section id="screener-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">🔍 Market Screener</h1>
+        <p class="view-subtitle">Filter and discover stocks by fundamentals &amp; technicals — powered by TradingView</p>
+      </div>
+    </div>
+    <div class="tv-widget-container" id="tv-screener-container"></div>
   </section>
 
   <!-- CRYPTO DASHBOARD VIEW -->
@@ -433,6 +479,23 @@
     </div>
     <div class="modal-body" id="news-modal-body">
       <div class="news-loading">Loading news…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── CUSTOMIZE SECTORS MODAL ────────────────────────────────── -->
+<div id="customize-sectors-modal" class="modal-overlay" onclick="handleModalOverlayClick(event,'customize-sectors-modal')">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="cust-modal-title">✏️ Customize Sector Group</h2>
+      <button class="modal-close" onclick="hideCustomizeSectorsModal()">✕</button>
+    </div>
+    <div class="modal-body" id="cust-modal-body" style="padding:20px">
+      <!-- filled dynamically -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="hideCustomizeSectorsModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveCustomizeSectors()">Save Changes</button>
     </div>
   </div>
 </div>

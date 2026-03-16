@@ -159,6 +159,9 @@ function navigate(view) {
     case 'saved-news': renderSavedNews(); break;
     case 'profiles': renderProfiles(); break;
     case 'sectors': renderSectors(); break;
+    case 'maps': initTVMaps(); break;
+    case 'calendar': initTVCalendar(); break;
+    case 'screener': initTVScreener(); break;
     case 'crypto': renderCryptoDashboard(); break;
     case 'settings': renderSettings(); break;
   }
@@ -1447,7 +1450,10 @@ async function selectSymbol(symbol, name, type) {
     document.getElementById('earnings-section').style.display = 'block';
     document.getElementById('notify-group').style.display = 'block';
     document.getElementById('repeat-group').style.display = 'flex';
-    document.getElementById('submit-alert-btn').disabled = false;
+    const submitBtn = document.getElementById('submit-alert-btn');
+    submitBtn.disabled = false;
+    // Auto-focus submit button so user can press Enter to create the alert
+    setTimeout(() => submitBtn?.focus(), 80);
     const finBtn = document.getElementById('financials-header-btn');
     if (finBtn) finBtn.style.display = 'inline-block';
     state.stocks[symbol] = state.stocks[symbol] || {};
@@ -3463,13 +3469,13 @@ let _sectorsData = null;
 let _sectorPeriod = '1D';
 let _sectorHoverTimer = null;
 
-const SECTOR_GROUP_ORDER = ['US Sectors', 'US Market Style', 'International', 'Commodities & Alts', 'Fixed Income', 'Specialty'];
+const SECTOR_GROUP_ORDER = ['US Sectors', 'Tech Sectors', 'International', 'Commodities', 'Crypto', 'Fixed Income'];
 
 async function renderSectors() {
   const grid = document.getElementById('sectors-grid');
   if (!grid) return;
   if (!_sectorsData) {
-    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><h3>Loading sector data…</h3><p>Fetching performance for 38 market sectors</p></div>';
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><h3>Loading sector data…</h3><p>Fetching performance for 72 market sectors across 6 groups</p></div>';
     try {
       _sectorsData = await api('GET', '/sectors');
     } catch (e) {
@@ -3521,11 +3527,20 @@ function _buildSectorGrid() {
   if (subtitle) subtitle.textContent = `${_sectorsData.length} sectors · ${up} ↑ up · ${dn} ↓ down · ${period} performance`;
 
   grid.innerHTML = SECTOR_GROUP_ORDER.map(groupName => {
-    const items = groups[groupName] || [];
+    const custom = _getCustomSector(groupName);
+    const displayName = custom.label || groupName;
+    let items = groups[groupName] || [];
+    if (custom.symbols?.length) {
+      // Preserve custom order; add any custom symbols not in base data as placeholder
+      items = custom.symbols.map(sym => items.find(s => s.symbol === sym)).filter(Boolean);
+    }
     if (!items.length) return '';
     return `
       <div class="sector-group">
-        <div class="sector-group-header">${groupName}</div>
+        <div class="sector-group-header">
+          <span>${displayName}</span>
+          <button class="sector-customize-btn" onclick="customizeSectorGroup('${groupName}')">✏️ Customize</button>
+        </div>
         ${items.map(s => _buildSectorRow(s, period, maxAbs)).join('')}
       </div>`;
   }).join('');
@@ -3603,7 +3618,7 @@ async function _showSectorPopup(anchorEl, symbol, name) {
   const chgStr = sec?.changePct != null
     ? `<span style="color:var(--${sec.changePct >= 0 ? 'green' : 'red'})">${sec.changePct >= 0 ? '+' : ''}${sec.changePct.toFixed(2)}%</span>`
     : '';
-  const perfRows = sec?.perf ? ['1D','1W','1M','YTD','1Y'].map(p =>
+  const perfRows = sec?.perf ? ['1D','1W','1M','3M','YTD','1Y','2Y','5Y','10Y'].map(p =>
     `<span class="snp-perf-item"><span class="snp-perf-label">${p}</span><span class="snp-perf-val ${(sec.perf[p] ?? 0) >= 0 ? 'up' : 'down'}">${sec.perf[p] != null ? (sec.perf[p] >= 0 ? '+' : '') + sec.perf[p].toFixed(2) + '%' : '—'}</span></span>`
   ).join('') : '';
 
@@ -3632,6 +3647,160 @@ async function _showSectorPopup(anchorEl, symbol, name) {
     const nl = document.getElementById(`snp-news-${symbol}`);
     if (nl) nl.innerHTML = '<div class="snp-loading">News unavailable</div>';
   }
+}
+
+/* ─── SECTOR CUSTOMIZE ────────────────────────────────────────── */
+let _customizingGroup = null;
+
+function _getCustomSector(groupName) {
+  try { return (JSON.parse(localStorage.getItem('customSectors') || '{}'))[groupName] || {}; }
+  catch { return {}; }
+}
+function _setCustomSector(groupName, data) {
+  try {
+    const all = JSON.parse(localStorage.getItem('customSectors') || '{}');
+    all[groupName] = data;
+    localStorage.setItem('customSectors', JSON.stringify(all));
+  } catch {}
+}
+
+function customizeSectorGroup(groupName) {
+  _customizingGroup = groupName;
+  const custom = _getCustomSector(groupName);
+  const allInGroup = _sectorsData?.filter(s => s.group === groupName) || [];
+  const activeSymbols = custom.symbols?.length ? custom.symbols : allInGroup.map(s => s.symbol);
+  const displayName = custom.label || groupName;
+
+  document.getElementById('cust-modal-title').textContent = `✏️ Customize: ${groupName}`;
+  const body = document.getElementById('cust-modal-body');
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Group Display Name</label>
+      <input type="text" class="form-input" id="cust-group-name" value="${displayName}" placeholder="${groupName}" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Active Sectors <span class="form-label-hint">(click × to remove)</span></label>
+      <div class="cust-chips" id="cust-active-chips">
+        ${activeSymbols.map(sym => {
+          const s = _sectorsData?.find(x => x.symbol === sym);
+          return `<span class="cust-chip" data-sym="${sym}">${s?.emoji || '📊'} ${sym}<button onclick="removeCustChip('${sym}')">×</button></span>`;
+        }).join('')}
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Add Ticker</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" class="form-input" id="cust-add-ticker" placeholder="e.g. VTI, SPY, GLD…" style="text-transform:uppercase" onkeydown="if(event.key==='Enter')addCustChip()" />
+        <button class="btn-secondary" onclick="addCustChip()">Add</button>
+      </div>
+      <p class="form-hint">Enter any ETF or stock ticker. Already-fetched tickers appear with their emoji.</p>
+    </div>
+    <div style="margin-top:4px">
+      <button class="btn-outline" style="font-size:11px;padding:4px 10px" onclick="resetCustomSector('${groupName}')">↺ Reset to Default</button>
+    </div>`;
+
+  document.getElementById('customize-sectors-modal').style.display = 'flex';
+}
+
+function removeCustChip(sym) {
+  const chip = document.querySelector(`.cust-chip[data-sym="${sym}"]`);
+  if (chip) chip.remove();
+}
+
+function addCustChip() {
+  const input = document.getElementById('cust-add-ticker');
+  const sym = input.value.trim().toUpperCase();
+  if (!sym) return;
+  if (document.querySelector(`.cust-chip[data-sym="${sym}"]`)) { input.value = ''; return; }
+  const s = _sectorsData?.find(x => x.symbol === sym);
+  const emoji = s?.emoji || '📊';
+  const chips = document.getElementById('cust-active-chips');
+  const chip = document.createElement('span');
+  chip.className = 'cust-chip';
+  chip.dataset.sym = sym;
+  chip.innerHTML = `${emoji} ${sym}<button onclick="removeCustChip('${sym}')">×</button>`;
+  chips.appendChild(chip);
+  input.value = '';
+}
+
+function saveCustomizeSectors() {
+  if (!_customizingGroup) return;
+  const label = (document.getElementById('cust-group-name')?.value || '').trim();
+  const chips = document.querySelectorAll('#cust-active-chips .cust-chip');
+  const symbols = [...chips].map(c => c.dataset.sym);
+  _setCustomSector(_customizingGroup, { label: label || _customizingGroup, symbols });
+  hideCustomizeSectorsModal();
+  _buildSectorGrid();
+}
+
+function resetCustomSector(groupName) {
+  _setCustomSector(groupName, {});
+  hideCustomizeSectorsModal();
+  _buildSectorGrid();
+}
+
+function hideCustomizeSectorsModal() {
+  const m = document.getElementById('customize-sectors-modal');
+  if (m) m.style.display = 'none';
+  _customizingGroup = null;
+}
+
+/* ─── TRADINGVIEW WIDGETS ─────────────────────────────────────── */
+function _injectTVWidget(containerId, widgetName, config) {
+  const container = document.getElementById(containerId);
+  if (!container || container.dataset.initialized) return;
+  container.dataset.initialized = 'true';
+  container.innerHTML = ''; // clear any placeholder
+  const script = document.createElement('script');
+  script.src = `https://s3.tradingview.com/external-embedding/embed-widget-${widgetName}.js`;
+  script.async = true;
+  script.text = JSON.stringify(config);
+  container.appendChild(script);
+}
+
+function initTVMaps() {
+  _injectTVWidget('tv-maps-container', 'stock-heatmap', {
+    exchanges: [],
+    dataSource: 'SPX500',
+    grouping: 'sector',
+    blockSize: 'market_cap_basic',
+    blockColor: 'change',
+    locale: 'en',
+    symbolUrl: '',
+    colorTheme: 'dark',
+    hasTopBar: true,
+    isDataSetEnabled: true,
+    isZoomEnabled: true,
+    hasSymbolTooltip: true,
+    isMonoSize: false,
+    width: '100%',
+    height: 650,
+  });
+}
+
+function initTVCalendar() {
+  _injectTVWidget('tv-calendar-container', 'events', {
+    colorTheme: 'dark',
+    isTransparent: false,
+    width: '100%',
+    height: 650,
+    locale: 'en',
+    importanceFilter: '-1,0,1',
+    countryFilter: 'ar,au,br,ca,cn,de,es,fr,gb,in,it,jp,kr,mx,ru,sa,tr,us,eu',
+  });
+}
+
+function initTVScreener() {
+  _injectTVWidget('tv-screener-container', 'screener', {
+    width: '100%',
+    height: 650,
+    defaultColumn: 'overview',
+    defaultScreen: 'general',
+    market: 'america',
+    showToolbar: true,
+    colorTheme: 'dark',
+    locale: 'en',
+  });
 }
 
 /* ─── BOOT ────────────────────────────────────────────────────── */

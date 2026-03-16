@@ -317,66 +317,101 @@ async function yfProfile(symbol) {
   return result;
 }
 
-// ── Market Sector ETFs ──
+// ── Market Sector ETFs — 6 groups × 12 each ──
 const SECTOR_ETFS = [
-  // US Equity Sectors (11)
-  { symbol: 'XLK',     name: 'Technology',          group: 'US Sectors',        emoji: '💻' },
-  { symbol: 'XLF',     name: 'Financials',           group: 'US Sectors',        emoji: '🏦' },
-  { symbol: 'XLV',     name: 'Health Care',          group: 'US Sectors',        emoji: '⚕️' },
-  { symbol: 'XLY',     name: 'Consumer Discret.',    group: 'US Sectors',        emoji: '🛍️' },
-  { symbol: 'XLP',     name: 'Consumer Staples',     group: 'US Sectors',        emoji: '🛒' },
-  { symbol: 'XLE',     name: 'Energy',               group: 'US Sectors',        emoji: '⛽' },
-  { symbol: 'XLI',     name: 'Industrials',          group: 'US Sectors',        emoji: '🏭' },
-  { symbol: 'XLB',     name: 'Materials',            group: 'US Sectors',        emoji: '🪨' },
-  { symbol: 'XLRE',    name: 'Real Estate',          group: 'US Sectors',        emoji: '🏢' },
-  { symbol: 'XLU',     name: 'Utilities',            group: 'US Sectors',        emoji: '💡' },
-  { symbol: 'XLC',     name: 'Comm. Services',       group: 'US Sectors',        emoji: '📡' },
-  // US Market Style (7)
-  { symbol: 'SPY',     name: 'S&P 500 Blend',        group: 'US Market Style',   emoji: '🇺🇸' },
-  { symbol: 'IVW',     name: 'S&P 500 Growth',       group: 'US Market Style',   emoji: '📈' },
-  { symbol: 'IVE',     name: 'S&P 500 Value',        group: 'US Market Style',   emoji: '💎' },
-  { symbol: 'IJH',     name: 'Mid Cap',              group: 'US Market Style',   emoji: '🔵' },
-  { symbol: 'IJR',     name: 'Small Cap',            group: 'US Market Style',   emoji: '🔴' },
-  { symbol: 'QQQ',     name: 'Nasdaq 100',           group: 'US Market Style',   emoji: '💻' },
-  { symbol: 'DIA',     name: 'Dow 30',               group: 'US Market Style',   emoji: '🏛️' },
-  // International (8)
-  { symbol: 'EFA',     name: 'Dev. Mkts (EAFE)',     group: 'International',     emoji: '🌍' },
-  { symbol: 'EEM',     name: 'Emerging Mkts',        group: 'International',     emoji: '🌏' },
-  { symbol: 'VEA',     name: 'Dev. ex-US (Vang.)',   group: 'International',     emoji: '🌐' },
-  { symbol: 'FXI',     name: 'China Large Cap',      group: 'International',     emoji: '🇨🇳' },
-  { symbol: 'EWJ',     name: 'Japan',                group: 'International',     emoji: '🇯🇵' },
-  { symbol: 'EWG',     name: 'Germany',              group: 'International',     emoji: '🇩🇪' },
-  { symbol: 'EWZ',     name: 'Brazil',               group: 'International',     emoji: '🇧🇷' },
-  { symbol: 'EWT',     name: 'Taiwan',               group: 'International',     emoji: '🇹🇼' },
-  // Commodities & Alternatives (5)
-  { symbol: 'GLD',     name: 'Gold',                 group: 'Commodities & Alts', emoji: '🥇' },
-  { symbol: 'SLV',     name: 'Silver',               group: 'Commodities & Alts', emoji: '🥈' },
-  { symbol: 'USO',     name: 'Oil (WTI)',             group: 'Commodities & Alts', emoji: '🛢️' },
-  { symbol: 'PDBC',    name: 'Broad Commodities',    group: 'Commodities & Alts', emoji: '📦' },
-  { symbol: 'BTC-USD', name: 'Bitcoin',              group: 'Commodities & Alts', emoji: '₿' },
-  // Fixed Income (4)
-  { symbol: 'TLT',     name: 'Long Bond (20Y+)',     group: 'Fixed Income',      emoji: '📋' },
-  { symbol: 'IEF',     name: 'Mid Bond (7-10Y)',     group: 'Fixed Income',      emoji: '📋' },
-  { symbol: 'HYG',     name: 'High Yield Corp.',     group: 'Fixed Income',      emoji: '📋' },
-  { symbol: 'LQD',     name: 'Inv. Grade Corp.',     group: 'Fixed Income',      emoji: '📋' },
-  // Specialty (5)
-  { symbol: 'VNQ',     name: 'US REITs',             group: 'Specialty',         emoji: '🏘️' },
-  { symbol: 'IBB',     name: 'Biotech',              group: 'Specialty',         emoji: '🧬' },
-  { symbol: 'ARKK',    name: 'Disruptive Innovation',group: 'Specialty',         emoji: '🚀' },
-  { symbol: 'GDX',     name: 'Gold Miners',          group: 'Specialty',         emoji: '⛏️' },
-  { symbol: 'KWEB',    name: 'China Internet',       group: 'Specialty',         emoji: '🌐' },
+  // 1) US Sectors — 12 major SPDR sectors
+  { symbol: 'XLK',     name: 'Technology',           group: 'US Sectors',     emoji: '💻' },
+  { symbol: 'XLF',     name: 'Financials',            group: 'US Sectors',     emoji: '🏦' },
+  { symbol: 'XLV',     name: 'Health Care',           group: 'US Sectors',     emoji: '⚕️' },
+  { symbol: 'XLY',     name: 'Consumer Discret.',     group: 'US Sectors',     emoji: '🛍️' },
+  { symbol: 'XLP',     name: 'Consumer Staples',      group: 'US Sectors',     emoji: '🛒' },
+  { symbol: 'XLE',     name: 'Energy',                group: 'US Sectors',     emoji: '⛽' },
+  { symbol: 'XLI',     name: 'Industrials',           group: 'US Sectors',     emoji: '🏭' },
+  { symbol: 'XLB',     name: 'Materials',             group: 'US Sectors',     emoji: '🪨' },
+  { symbol: 'XLRE',    name: 'Real Estate',           group: 'US Sectors',     emoji: '🏢' },
+  { symbol: 'XLU',     name: 'Utilities',             group: 'US Sectors',     emoji: '💡' },
+  { symbol: 'XLC',     name: 'Comm. Services',        group: 'US Sectors',     emoji: '📡' },
+  { symbol: 'XHB',     name: 'Homebuilders',          group: 'US Sectors',     emoji: '🏠' },
+  // 2) Tech Sectors — hardware, software, data center, AI, defense, space
+  { symbol: 'QQQ',     name: 'Nasdaq 100',            group: 'Tech Sectors',   emoji: '🖥️' },
+  { symbol: 'SOXX',    name: 'Semiconductors',        group: 'Tech Sectors',   emoji: '⚡' },
+  { symbol: 'SMH',     name: 'Semicon. (VanEck)',     group: 'Tech Sectors',   emoji: '🔬' },
+  { symbol: 'IGV',     name: 'Software',              group: 'Tech Sectors',   emoji: '📦' },
+  { symbol: 'WCLD',    name: 'Cloud Computing',       group: 'Tech Sectors',   emoji: '☁️' },
+  { symbol: 'CIBR',    name: 'Cybersecurity',         group: 'Tech Sectors',   emoji: '🛡️' },
+  { symbol: 'BOTZ',    name: 'Robotics & AI',         group: 'Tech Sectors',   emoji: '🤖' },
+  { symbol: 'AIQ',     name: 'AI & Big Data',         group: 'Tech Sectors',   emoji: '🧠' },
+  { symbol: 'ARKK',    name: 'Disruptive Innovation', group: 'Tech Sectors',   emoji: '🚀' },
+  { symbol: 'ITA',     name: 'Aerospace & Defense',   group: 'Tech Sectors',   emoji: '✈️' },
+  { symbol: 'DRIV',    name: 'EV & Autonomous',       group: 'Tech Sectors',   emoji: '🚗' },
+  { symbol: 'UFO',     name: 'Space Exploration',     group: 'Tech Sectors',   emoji: '🛸' },
+  // 3) International — developed & emerging markets
+  { symbol: 'EFA',     name: 'Dev. Mkts (EAFE)',      group: 'International',  emoji: '🌍' },
+  { symbol: 'EEM',     name: 'Emerging Mkts (iSh)',   group: 'International',  emoji: '🌏' },
+  { symbol: 'VEA',     name: 'Dev. ex-US (Vang.)',    group: 'International',  emoji: '🌐' },
+  { symbol: 'VWO',     name: 'Emrg. Mkts (Vang.)',   group: 'International',  emoji: '🌎' },
+  { symbol: 'FXI',     name: 'China Large Cap',       group: 'International',  emoji: '🇨🇳' },
+  { symbol: 'MCHI',    name: 'MSCI China',            group: 'International',  emoji: '🇨🇳' },
+  { symbol: 'EWJ',     name: 'Japan',                 group: 'International',  emoji: '🇯🇵' },
+  { symbol: 'EWG',     name: 'Germany',               group: 'International',  emoji: '🇩🇪' },
+  { symbol: 'EWU',     name: 'UK',                    group: 'International',  emoji: '🇬🇧' },
+  { symbol: 'EWZ',     name: 'Brazil',                group: 'International',  emoji: '🇧🇷' },
+  { symbol: 'EWT',     name: 'Taiwan',                group: 'International',  emoji: '🇹🇼' },
+  { symbol: 'EWY',     name: 'South Korea',           group: 'International',  emoji: '🇰🇷' },
+  // 4) Commodities — gold, silver, copper, oil, gas, agriculture
+  { symbol: 'GLD',     name: 'Gold',                  group: 'Commodities',    emoji: '🥇' },
+  { symbol: 'IAU',     name: 'Gold (iShares)',         group: 'Commodities',    emoji: '🥇' },
+  { symbol: 'SLV',     name: 'Silver',                group: 'Commodities',    emoji: '🥈' },
+  { symbol: 'PPLT',    name: 'Platinum',              group: 'Commodities',    emoji: '🔷' },
+  { symbol: 'CPER',    name: 'Copper',                group: 'Commodities',    emoji: '🟤' },
+  { symbol: 'GDX',     name: 'Gold Miners',           group: 'Commodities',    emoji: '⛏️' },
+  { symbol: 'USO',     name: 'Oil (WTI)',              group: 'Commodities',    emoji: '🛢️' },
+  { symbol: 'BNO',     name: 'Brent Oil',             group: 'Commodities',    emoji: '🛢️' },
+  { symbol: 'UNG',     name: 'Natural Gas',           group: 'Commodities',    emoji: '🔥' },
+  { symbol: 'DBA',     name: 'Agriculture',           group: 'Commodities',    emoji: '🌾' },
+  { symbol: 'WEAT',    name: 'Wheat',                 group: 'Commodities',    emoji: '🌾' },
+  { symbol: 'PDBC',    name: 'Broad Commodities',     group: 'Commodities',    emoji: '📦' },
+  // 5) Crypto — 12 major assets (Yahoo Finance tickers)
+  { symbol: 'BTC-USD', name: 'Bitcoin',               group: 'Crypto',         emoji: '₿' },
+  { symbol: 'ETH-USD', name: 'Ethereum',              group: 'Crypto',         emoji: '⟠' },
+  { symbol: 'BNB-USD', name: 'BNB',                   group: 'Crypto',         emoji: '🔶' },
+  { symbol: 'XRP-USD', name: 'XRP',                   group: 'Crypto',         emoji: '💧' },
+  { symbol: 'SOL-USD', name: 'Solana',                group: 'Crypto',         emoji: '◎' },
+  { symbol: 'ADA-USD', name: 'Cardano',               group: 'Crypto',         emoji: '🔵' },
+  { symbol: 'AVAX-USD',name: 'Avalanche',             group: 'Crypto',         emoji: '🔺' },
+  { symbol: 'DOGE-USD',name: 'Dogecoin',              group: 'Crypto',         emoji: '🐕' },
+  { symbol: 'DOT-USD', name: 'Polkadot',              group: 'Crypto',         emoji: '⚫' },
+  { symbol: 'LINK-USD',name: 'Chainlink',             group: 'Crypto',         emoji: '🔗' },
+  { symbol: 'LTC-USD', name: 'Litecoin',              group: 'Crypto',         emoji: '🌕' },
+  { symbol: 'BCH-USD', name: 'Bitcoin Cash',          group: 'Crypto',         emoji: '💚' },
+  // 6) Fixed Income — 12 bond ETFs
+  { symbol: 'AGG',     name: 'US Total Bond',         group: 'Fixed Income',   emoji: '🏛️' },
+  { symbol: 'BND',     name: 'Total Bond (Vang.)',    group: 'Fixed Income',   emoji: '🏛️' },
+  { symbol: 'TLT',     name: 'Long Bond (20Y+)',      group: 'Fixed Income',   emoji: '📋' },
+  { symbol: 'IEF',     name: 'Mid Bond (7-10Y)',      group: 'Fixed Income',   emoji: '📋' },
+  { symbol: 'SHY',     name: 'Short Bond (1-3Y)',     group: 'Fixed Income',   emoji: '📋' },
+  { symbol: 'HYG',     name: 'High Yield Corp.',      group: 'Fixed Income',   emoji: '⚡' },
+  { symbol: 'LQD',     name: 'Inv. Grade Corp.',      group: 'Fixed Income',   emoji: '💼' },
+  { symbol: 'VCIT',    name: 'Corp. Intermediate',    group: 'Fixed Income',   emoji: '💼' },
+  { symbol: 'MUB',     name: 'Muni Bonds',            group: 'Fixed Income',   emoji: '🏙️' },
+  { symbol: 'TIP',     name: 'TIPS (Inflation)',       group: 'Fixed Income',   emoji: '📈' },
+  { symbol: 'EMB',     name: 'Emrg. Mkt Bonds',      group: 'Fixed Income',   emoji: '🌏' },
+  { symbol: 'BNDX',    name: 'Intl Bond (Vang.)',     group: 'Fixed Income',   emoji: '🌍' },
 ];
 
 const sectorCache = { data: null, fetchedAt: 0 };
 const SECTOR_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 async function fetchOneSectorPerf(etf) {
-  const ranges = { '1D': '1d', '1W': '5d', '1M': '1mo', 'YTD': 'ytd', '1Y': '1y' };
-  const perf = {};
+  // Fetch all periods IN PARALLEL for speed
+  const PERIOD_RANGES = [
+    ['1D','1d','5m'], ['1W','5d','1d'], ['1M','1mo','1d'], ['3M','3mo','1d'],
+    ['YTD','ytd','1d'], ['1Y','1y','1d'], ['2Y','2y','1d'], ['5Y','5y','1wk'], ['10Y','10y','1mo'],
+  ];
   let price = null, change = null, changePct = null;
-  for (const [label, range] of Object.entries(ranges)) {
+
+  const pairs = await Promise.all(PERIOD_RANGES.map(async ([label, range, interval]) => {
     try {
-      const interval = range === '1d' ? '5m' : '1d';
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(etf.symbol)}?interval=${interval}&range=${range}`;
       const r = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
       if (r.ok) {
@@ -386,13 +421,17 @@ async function fetchOneSectorPerf(etf) {
           const prev = meta.chartPreviousClose || meta.previousClose;
           const cur = meta.regularMarketPrice;
           if (prev && cur) {
-            perf[label] = +((cur - prev) / prev * 100).toFixed(2);
-            if (label === '1D') { price = cur; change = +(cur - prev).toFixed(2); changePct = perf[label]; }
+            const pct = +((cur - prev) / prev * 100).toFixed(2);
+            if (label === '1D') { price = cur; change = +(cur - prev).toFixed(2); changePct = pct; }
+            return [label, pct];
           }
         }
       }
-    } catch { perf[label] = null; }
-  }
+    } catch {}
+    return [label, null];
+  }));
+
+  const perf = Object.fromEntries(pairs);
   return { ...etf, perf, price, change, changePct };
 }
 
@@ -400,14 +439,14 @@ async function fetchSectorData() {
   if (sectorCache.data && (Date.now() - sectorCache.fetchedAt) < SECTOR_CACHE_TTL) {
     return sectorCache.data;
   }
-  // Batch in groups of 8 to avoid rate-limit
-  const BATCH = 8;
+  // Batch 10 ETFs at a time (each fetches all periods in parallel internally)
+  const BATCH = 10;
   const results = [];
   for (let i = 0; i < SECTOR_ETFS.length; i += BATCH) {
     const batch = SECTOR_ETFS.slice(i, i + BATCH);
     const batchRes = await Promise.all(batch.map(fetchOneSectorPerf));
     results.push(...batchRes);
-    if (i + BATCH < SECTOR_ETFS.length) await new Promise(r => setTimeout(r, 200));
+    if (i + BATCH < SECTOR_ETFS.length) await new Promise(r => setTimeout(r, 150));
   }
   sectorCache.data = results;
   sectorCache.fetchedAt = Date.now();
