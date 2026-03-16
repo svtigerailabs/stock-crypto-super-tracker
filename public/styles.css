@@ -43,13 +43,13 @@ html, body {
 
 /* ─── SIDEBAR ─────────────────────────────────────────────────── */
 .sidebar-logo {
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 14px 12px; border-bottom: 1px solid var(--border);
-  position: relative; flex-shrink: 0; min-height: 70px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 16px 12px; border-bottom: 1px solid var(--border);
+  position: relative; flex-shrink: 0; min-height: 220px;
 }
 .logo-img {
-  width: 100%; max-width: 190px; height: auto; max-height: 58px;
-  object-fit: contain; border-radius: 6px;
+  width: 85%; max-width: 187px; height: auto; max-height: 200px;
+  object-fit: contain; border-radius: 8px;
 }
 .logo-icon { font-size: 26px; line-height: 1; }
 .logo-text {
