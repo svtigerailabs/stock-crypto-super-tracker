@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock & Crypto Super Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
+</head>
+<body>
+
+<!-- ─── SIDEBAR ─────────────────────────────────────────────────── -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <span class="logo-icon">📈</span>
+    <span class="logo-text">Stock & Crypto<br><span class="logo-sub">Super Tracker</span></span>
+  </div>
+  <ul class="nav-list">
+    <li class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
+      <span class="nav-icon">⊞</span> Stock Dashboard
+    </li>
+    <li class="nav-item" data-view="crypto" onclick="navigate('crypto')">
+      <span class="nav-icon">₿</span> Crypto Dashboard
+    </li>
+    <li class="nav-item" data-view="alerts" onclick="navigate('alerts')">
+      <span class="nav-icon">🔔</span> Alerts
+      <span class="nav-badge" id="nav-alerts-badge" style="display:none">0</span>
+    </li>
+    <li class="nav-item" data-view="history" onclick="navigate('history')">
+      <span class="nav-icon">📋</span> History
+      <span class="nav-badge" id="nav-history-badge" style="display:none">0</span>
+    </li>
+    <li class="nav-item" data-view="news" onclick="navigate('news')">
+      <span class="nav-icon">📰</span> Latest News
+    </li>
+    <li class="nav-item" data-view="saved-news" onclick="navigate('saved-news')">
+      <span class="nav-icon">🔖</span> Saved News
+      <span class="nav-badge" id="nav-saved-badge" style="display:none">0</span>
+    </li>
+    <li class="nav-item" data-view="settings" onclick="navigate('settings')">
+      <span class="nav-icon">⚙</span> Settings
+    </li>
+  </ul>
+  <div class="sidebar-footer">
+    <button class="mute-btn" id="mute-alerts-btn" onclick="toggleAlertsMute()" title="Mute/Unmute Alerts">
+      <span id="mute-icon">🔔</span> <span id="mute-label">Alerts On</span>
+    </button>
+    <div id="connection-status" class="connection-status disconnected">
+      <span class="status-dot"></span> Connecting…
+    </div>
+    <div id="last-check-time" class="last-check">—</div>
+  </div>
+</nav>
+
+<!-- ─── MAIN CONTENT ───────────────────────────────────────────── -->
+<main class="main-content">
+
+  <!-- DASHBOARD VIEW -->
+  <section id="dashboard-view" class="view active">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">Stock Dashboard</h1>
+      </div>
+      <div class="header-actions">
+        <div class="view-toggle" id="view-toggle">
+          <button class="view-toggle-btn active" data-mode="grid" onclick="switchDashView('grid')" title="Compact Grid">⊞</button>
+          <button class="view-toggle-btn" data-mode="cards" onclick="switchDashView('cards')" title="Card View with Charts">📊</button>
+          <button class="view-toggle-btn" data-mode="detailed" onclick="switchDashView('detailed')" title="Detailed Table">📋</button>
+        </div>
+        <button class="btn-sm-edit" id="edit-mode-btn" onclick="toggleEditMode()">✏️ Edit</button>
+        <button class="btn-sm-add" onclick="showAddAlertModal()">＋ Alert</button>
+      </div>
+    </div>
+
+    <!-- Headline Ticker Bar -->
+    <div class="headline-ticker" id="stock-headline-ticker">
+      <span class="ticker-label">📰 LIVE</span>
+      <div class="ticker-scroll-outer">
+        <div class="ticker-scroll-inner" id="stock-ticker-track">
+          <span class="ticker-loading">Loading headlines…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Market Index Bar (Yahoo Finance style) -->
+    <div id="market-index-bar" class="market-index-bar">
+      <div class="mkt-idx-loading">Loading market data…</div>
+    </div>
+
+    <div id="stocks-grid" class="stocks-grid">
+      <div class="empty-state" id="dashboard-empty">
+        <div class="empty-icon">📊</div>
+        <h3>No stocks tracked yet</h3>
+        <p>Add an alert to start monitoring US stocks and ETFs</p>
+        <button class="btn-primary" onclick="showAddAlertModal()">+ Add Your First Alert</button>
+      </div>
+    </div>
+
+    <!-- Latest News below dashboard -->
+    <div id="dashboard-news" class="dashboard-news-section"></div>
+  </section>
+
+  <!-- CRYPTO DASHBOARD VIEW -->
+  <section id="crypto-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">Crypto Dashboard</h1>
+      </div>
+      <div class="header-actions">
+        <div class="view-toggle" id="crypto-view-toggle">
+          <button class="view-toggle-btn" data-mode="compact" onclick="switchCryptoView('compact')" title="Compact Grid">⊟</button>
+          <button class="view-toggle-btn active" data-mode="grid" onclick="switchCryptoView('grid')" title="Card View">⊞</button>
+          <button class="view-toggle-btn" data-mode="detailed" onclick="switchCryptoView('detailed')" title="Detailed Table">📋</button>
+        </div>
+        <button class="btn-sm-edit" id="crypto-edit-mode-btn" onclick="toggleCryptoEditMode()">✏️ Edit</button>
+        <button class="btn-secondary" onclick="refreshCrypto()">🔄 Refresh</button>
+      </div>
+    </div>
+    <!-- Headline Ticker Bar -->
+    <div class="headline-ticker" id="crypto-headline-ticker">
+      <span class="ticker-label">₿ LIVE</span>
+      <div class="ticker-scroll-outer">
+        <div class="ticker-scroll-inner" id="crypto-ticker-track">
+          <span class="ticker-loading">Loading headlines…</span>
+        </div>
+      </div>
+    </div>
+    <div id="crypto-grid" class="stocks-grid">
+      <div class="empty-state"><div class="empty-icon">₿</div><h3>Loading crypto data…</h3></div>
+    </div>
+    <div id="crypto-news-section" class="dashboard-news-section" style="display:none"></div>
+  </section>
+
+  <!-- ALERTS VIEW -->
+  <section id="alerts-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">Alerts</h1>
+        <p class="view-subtitle">Configure price & volatility alerts</p>
+      </div>
+      <button class="btn-primary" onclick="showAddAlertModal()">+ Add Alert</button>
+    </div>
+    <div id="alerts-list" class="alerts-list">
+      <div class="empty-state">
+        <div class="empty-icon">🔔</div>
+        <h3>No alerts configured</h3>
+        <p>Create an alert to get notified when a stock moves</p>
+        <button class="btn-primary" onclick="showAddAlertModal()">+ Add Alert</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- HISTORY VIEW -->
+  <section id="history-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">Notification History</h1>
+        <p class="view-subtitle">Recent alert events</p>
+      </div>
+      <button class="btn-danger-outline" onclick="clearHistory()">Clear All</button>
+    </div>
+    <div id="history-list" class="history-list">
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <h3>No history yet</h3>
+        <p>Triggered alerts will appear here</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LATEST NEWS VIEW -->
+  <section id="news-view" class="view">
+  </section>
+
+  <!-- SAVED NEWS VIEW -->
+  <section id="saved-news-view" class="view">
+  </section>
+
+  <!-- SETTINGS VIEW -->
+  <section id="settings-view" class="view">
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">Settings</h1>
+        <p class="view-subtitle">Configure notifications and check frequency</p>
+      </div>
+    </div>
+    <div class="settings-grid">
+      <!-- General -->
+      <div class="settings-card">
+        <h3 class="settings-card-title">⏱ Check Frequency</h3>
+        <p class="settings-card-desc">How often prices are checked against your alerts.</p>
+        <div class="form-group">
+          <label class="form-label">Interval (minutes)</label>
+          <select class="form-select" id="setting-interval">
+            <option value="1">Every 1 minute</option>
+            <option value="2">Every 2 minutes</option>
+            <option value="5">Every 5 minutes</option>
+            <option value="10">Every 10 minutes</option>
+            <option value="15">Every 15 minutes</option>
+            <option value="30">Every 30 minutes</option>
+          </select>
+        </div>
+        <button class="btn-secondary" onclick="saveGeneralSettings()">Save</button>
+      </div>
+      <!-- Email -->
+      <div class="settings-card">
+        <h3 class="settings-card-title">✉️ Email Notifications</h3>
+        <p class="settings-card-desc">Receive alerts via Gmail. Requires a <a href="https://myaccount.google.com/apppasswords" target="_blank" class="link">Gmail App Password</a>.</p>
+        <div class="toggle-row">
+          <label class="form-label">Enable Email</label>
+          <label class="toggle"><input type="checkbox" id="setting-email-enabled" onchange="toggleEmailFields()" /><span class="toggle-slider"></span></label>
+        </div>
+        <div id="email-fields">
+          <div class="form-group"><label class="form-label">Your Gmail (sender)</label><input type="email" class="form-input" id="setting-email-from" placeholder="yourname@gmail.com" /></div>
+          <div class="form-group"><label class="form-label">Gmail App Password</label><input type="password" class="form-input" id="setting-email-password" placeholder="Leave blank to keep existing" /></div>
+          <div class="form-group"><label class="form-label">Send alerts to</label><input type="email" class="form-input" id="setting-email-address" placeholder="recipient@example.com" /></div>
+        </div>
+        <div class="btn-row"><button class="btn-secondary" onclick="saveEmailSettings()">Save</button><button class="btn-outline" onclick="testEmail()">Send Test</button></div>
+        <div id="email-test-result" class="test-result"></div>
+      </div>
+      <!-- SMS -->
+      <div class="settings-card">
+        <h3 class="settings-card-title">📱 SMS Notifications</h3>
+        <p class="settings-card-desc">Send alerts via SMS using <a href="https://www.twilio.com/" target="_blank" class="link">Twilio</a>. Free trial available.</p>
+        <div class="toggle-row">
+          <label class="form-label">Enable SMS</label>
+          <label class="toggle"><input type="checkbox" id="setting-sms-enabled" onchange="toggleSmsFields()" /><span class="toggle-slider"></span></label>
+        </div>
+        <div id="sms-fields">
+          <div class="form-group"><label class="form-label">Twilio Account SID</label><input type="text" class="form-input" id="setting-twilio-sid" placeholder="ACxxxxxxxxxxxxxxxx" /></div>
+          <div class="form-group"><label class="form-label">Twilio Auth Token</label><input type="password" class="form-input" id="setting-twilio-token" placeholder="Leave blank to keep existing" /></div>
+          <div class="form-group"><label class="form-label">Twilio Phone Number</label><input type="text" class="form-input" id="setting-twilio-phone" placeholder="+15551234567" /></div>
+          <div class="form-group"><label class="form-label">Your Phone Number (recipient)</label><input type="text" class="form-input" id="setting-phone-number" placeholder="+15559876543" /></div>
+        </div>
+        <div class="btn-row"><button class="btn-secondary" onclick="saveSmsSettings()">Save</button><button class="btn-outline" onclick="testSms()">Send Test</button></div>
+        <div id="sms-test-result" class="test-result"></div>
+      </div>
+      <!-- X Handles -->
+      <div class="settings-card">
+        <h3 class="settings-card-title">🐦 X / Twitter Accounts</h3>
+        <p class="settings-card-desc">Add X (Twitter) account handles to follow for real-time news in the Latest News view.</p>
+        <div id="x-handles-list"></div>
+        <div class="form-group" style="margin-top:12px">
+          <div style="display:flex;gap:8px">
+            <input type="text" class="form-input" id="new-x-handle" placeholder="@elonmusk" />
+            <button class="btn-secondary" onclick="addXHandle()">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ─── ADD ALERT MODAL (double-width: left=alerts, right=profile) ── -->
+<div id="add-alert-modal" class="modal-overlay" onclick="handleModalOverlayClick(event, 'add-alert-modal')">
+  <div class="modal modal-double">
+    <div class="modal-header">
+      <h2 class="modal-title">🔔 Create Alert(s)</h2>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn-secondary" id="financials-header-btn" style="display:none;font-size:12px;padding:5px 12px" onclick="showFinancialsFromHeader()">📊 Quarterly Reports</button>
+        <button class="modal-close" onclick="hideAddAlertModal()">✕</button>
+      </div>
+    </div>
+    <div class="modal-split">
+
+      <!-- LEFT PANEL: Search + Conditions + Earnings + Notify -->
+      <div class="modal-left">
+        <!-- Symbol search -->
+        <div class="form-group">
+          <label class="form-label">Search Stock / ETF</label>
+          <div class="search-wrapper">
+            <input type="text" id="symbol-search" class="form-input" placeholder="e.g. TSLA, Apple, SPY…" oninput="handleSymbolSearch(event)" autocomplete="off" />
+            <span class="search-icon">🔍</span>
+          </div>
+          <div id="search-results" class="search-results"></div>
+        </div>
+        <div id="selected-symbol-info"></div>
+
+        <!-- 6 condition rows (NO earnings_before in dropdown) -->
+        <div id="conditions-container" style="display:none">
+          <label class="form-label">Alert Conditions <span class="form-label-hint">(check the conditions you want, enter values)</span></label>
+          <div id="condition-rows"></div>
+        </div>
+
+        <!-- Earnings section (separate, at bottom) -->
+        <div id="earnings-section" class="earnings-section" style="display:none">
+          <div class="earnings-section-title">📅 Earnings Report</div>
+          <div id="earnings-info">Loading earnings…</div>
+          <div class="earnings-alert-row">
+            <label><input type="checkbox" id="earnings-alert-check" checked /> Alert me before next earnings</label>
+            <input type="number" id="earnings-days-input" class="earnings-days-input" value="7" min="1" max="60" />
+            <span class="earnings-days-label">days before</span>
+          </div>
+        </div>
+
+        <!-- Notification methods -->
+        <div class="form-group" id="notify-group" style="display:none">
+          <label class="form-label">Notify Via</label>
+          <div class="checkbox-row">
+            <label class="checkbox-label compact"><input type="checkbox" id="notify-popup" checked /><span class="checkbox-text"><span class="checkbox-icon">🖥️</span>Popup</span></label>
+            <label class="checkbox-label compact"><input type="checkbox" id="notify-email" /><span class="checkbox-text"><span class="checkbox-icon">✉️</span>Email</span></label>
+            <label class="checkbox-label compact"><input type="checkbox" id="notify-sms" /><span class="checkbox-text"><span class="checkbox-icon">📱</span>SMS</span></label>
+          </div>
+        </div>
+
+        <!-- Repeat -->
+        <div class="form-group toggle-row" id="repeat-group" style="display:none">
+          <div><label class="form-label">Repeat Alert</label><p class="form-hint">Keep firing every check while condition is met</p></div>
+          <label class="toggle"><input type="checkbox" id="repeat-alert" checked /><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL: Stock profile data snapshot -->
+      <div class="modal-right" id="modal-right-panel">
+        <div class="modal-right-empty">Select a stock on the left to see<br/>its full profile and key data</div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="hideAddAlertModal()">Cancel</button>
+      <button class="btn-primary" id="submit-alert-btn" onclick="submitAlert()" disabled>Create Alert(s)</button>
+    </div>
+    <div id="modal-error" class="modal-error" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ─── STOCK DETAIL POPUP (for table row click) ──────────────── -->
+<div id="stock-detail-modal" class="modal-overlay" onclick="handleModalOverlayClick(event, 'stock-detail-modal')">
+  <div class="modal modal-wide stock-detail-modal-inner">
+    <div class="modal-header">
+      <h2 class="modal-title" id="stock-detail-modal-title">📊 Stock Detail</h2>
+      <button class="modal-close" onclick="hideStockDetailModal()">✕</button>
+    </div>
+    <div class="modal-body stock-detail-modal-body" id="stock-detail-modal-body">
+      <div class="news-loading">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── NEWS MODAL ─────────────────────────────────────────────── -->
+<div id="news-modal" class="modal-overlay" onclick="handleModalOverlayClick(event, 'news-modal')">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2 class="modal-title" id="news-modal-title">📰 News</h2>
+      <button class="modal-close" onclick="hideNewsModal()">✕</button>
+    </div>
+    <div class="modal-body" id="news-modal-body">
+      <div class="news-loading">Loading news…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── TOAST CONTAINER ───────────────────────────────────────── -->
+<div id="toast-container" class="toast-container"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

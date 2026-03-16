@@ -1,0 +1,1181 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import { v4 as uuidv4 } from 'uuid';
+import cron from 'node-cron';
+import nodemailer from 'nodemailer';
+import twilio from 'twilio';
+import fs from 'fs';
+import http from 'http';
+import { Server } from 'socket.io';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
+app.use(cors());
+app.use(express.json());
+app.use(express.static(join(__dirname, 'public')));
+
+// ─── YAHOO FINANCE HELPERS ───────────────────────────────────────────────────
+
+const YF_UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+const YF_HEADERS = { ...YF_UA, 'Accept': 'application/json' };
+
+// ── Crumb-based auth (needed for quoteSummary/earnings) ──
+let yfCrumb = null;
+let yfCookies = '';
+let yfCrumbFetchedAt = 0;
+const CRUMB_TTL = 60 * 60 * 1000; // 1 hour
+
+async function ensureCrumb() {
+  if (yfCrumb && (Date.now() - yfCrumbFetchedAt) < CRUMB_TTL) return;
+  try {
+    // Step 1: get cookies (UA only, no Accept: json)
+    const initRes = await fetch('https://fc.yahoo.com/crumb', {
+      headers: YF_UA, redirect: 'manual',
+    });
+    const setCookies = initRes.headers.getSetCookie?.() || [];
+    yfCookies = setCookies.map(c => c.split(';')[0]).join('; ');
+
+    // Step 2: get crumb (UA + cookie, no Accept: json)
+    const crumbRes = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { ...YF_UA, Cookie: yfCookies },
+    });
+    const text = await crumbRes.text();
+    // Validate it's a real crumb (not an error JSON)
+    if (text && !text.includes('{')) {
+      yfCrumb = text;
+      yfCrumbFetchedAt = Date.now();
+      console.log('✅ Yahoo Finance crumb acquired');
+    } else {
+      console.warn('⚠️  Crumb response invalid:', text.slice(0, 60));
+    }
+  } catch (e) {
+    console.error('Crumb fetch error:', e.message);
+  }
+}
+
+// ── Stock quote (v8 chart — no auth needed) ──
+async function yfQuote(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d&includePrePost=true`;
+  const res = await fetch(url, { headers: YF_HEADERS });
+  if (!res.ok) throw new Error(`Yahoo Finance HTTP ${res.status} for ${symbol}`);
+  const json = await res.json();
+  const result = json.chart?.result?.[0];
+  if (!result) throw new Error(`No data for ${symbol}`);
+  const meta = result.meta;
+
+  const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
+  const price = meta.regularMarketPrice;
+  const change = price - prev;
+  const changePct = (change / prev) * 100;
+  const instrument = (meta.instrumentType || '').toUpperCase();
+  const quoteType = instrument === 'ETF' ? 'ETF' : instrument === 'EQUITY' ? 'EQUITY' : instrument || 'EQUITY';
+
+  return {
+    symbol: meta.symbol || symbol, name: meta.longName || meta.shortName || symbol,
+    price, previousClose: prev, change, changePercent: changePct,
+    open: meta.regularMarketOpen || price, high: meta.regularMarketDayHigh || price,
+    low: meta.regularMarketDayLow || price, volume: meta.regularMarketVolume || 0,
+    marketState: meta.marketState || detectMarketState(meta),
+    type: quoteType, currency: meta.currency || 'USD',
+  };
+}
+
+function detectMarketState(meta) {
+  const now = Math.floor(Date.now() / 1000);
+  const pre = meta.currentTradingPeriod?.pre;
+  const regular = meta.currentTradingPeriod?.regular;
+  const post = meta.currentTradingPeriod?.post;
+  if (!regular) return 'CLOSED';
+  if (now >= regular.start && now <= regular.end) return 'REGULAR';
+  if (pre && now >= pre.start && now <= pre.end) return 'PRE';
+  if (post && now >= post.start && now <= post.end) return 'POST';
+  return 'CLOSED';
+}
+
+// ── Search ──
+async function yfSearch(query) {
+  const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
+  const res = await fetch(url, { headers: YF_HEADERS });
+  if (!res.ok) throw new Error(`Search HTTP ${res.status}`);
+  const json = await res.json();
+  return (json.quotes || [])
+    .filter(q => ['EQUITY', 'ETF', 'MUTUALFUND'].includes((q.quoteType || '').toUpperCase()))
+    .slice(0, 8)
+    .map(q => ({
+      symbol: q.symbol, name: q.shortname || q.longname || q.symbol,
+      type: (q.quoteType || 'EQUITY').toUpperCase(), exchange: q.exchDisp || q.exchange || '',
+    }));
+}
+
+// ── News ──
+async function yfNews(symbol) {
+  const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&quotesCount=0&newsCount=15`;
+  const res = await fetch(url, { headers: YF_HEADERS });
+  if (!res.ok) throw new Error(`News HTTP ${res.status}`);
+  const json = await res.json();
+  return (json.news || []).map(n => ({
+    title: n.title, publisher: n.publisher, link: n.link,
+    publishedAt: n.providerPublishTime ? new Date(n.providerPublishTime * 1000).toISOString() : null,
+    thumbnail: n.thumbnail?.resolutions?.[0]?.url || null,
+  }));
+}
+
+// ── Earnings date (requires crumb auth) ──
+const earningsCache = {}; // { symbol: { date: Date|null, fetchedAt } }
+const EARNINGS_CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours
+
+async function yfEarningsDate(symbol) {
+  const cached = earningsCache[symbol];
+  if (cached && (Date.now() - cached.fetchedAt) < EARNINGS_CACHE_TTL) return cached.date;
+
+  await ensureCrumb();
+  if (!yfCrumb) { earningsCache[symbol] = { date: null, fetchedAt: Date.now() }; return null; }
+
+  try {
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=calendarEvents&crumb=${encodeURIComponent(yfCrumb)}`;
+    const res = await fetch(url, { headers: { ...YF_UA, Cookie: yfCookies } });
+    if (!res.ok) {
+      if (res.status === 401) { yfCrumb = null; yfCrumbFetchedAt = 0; } // force refresh
+      earningsCache[symbol] = { date: null, fetchedAt: Date.now() };
+      return null;
+    }
+    const json = await res.json();
+    const arr = json.quoteSummary?.result?.[0]?.calendarEvents?.earnings?.earningsDate;
+    const date = arr?.length ? new Date(arr[0].raw * 1000) : null;
+    earningsCache[symbol] = { date, fetchedAt: Date.now() };
+    return date;
+  } catch (e) {
+    console.error(`Earnings fetch error for ${symbol}:`, e.message);
+    earningsCache[symbol] = { date: null, fetchedAt: Date.now() };
+    return null;
+  }
+}
+
+// ── Rich profile (quoteSummary + sparkline) ──
+const profileCache = {};
+const PROFILE_CACHE_TTL = 30 * 60 * 1000; // 30 min
+
+async function yfProfile(symbol) {
+  const cached = profileCache[symbol];
+  if (cached && (Date.now() - cached._fetchedAt) < PROFILE_CACHE_TTL) return cached;
+
+  await ensureCrumb();
+
+  const result = {};
+
+  // 1) quoteSummary (crumb-protected)
+  if (yfCrumb) {
+    try {
+      const modules = 'price,summaryDetail,defaultKeyStatistics,financialData,calendarEvents,earnings,recommendationTrend';
+      const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}&crumb=${encodeURIComponent(yfCrumb)}`;
+      const res = await fetch(url, { headers: { ...YF_UA, Cookie: yfCookies } });
+      if (res.ok) {
+        const json = await res.json();
+        const r = json.quoteSummary?.result?.[0] || {};
+        const p = r.price || {}, sd = r.summaryDetail || {}, ks = r.defaultKeyStatistics || {};
+        const fd = r.financialData || {}, ce = r.calendarEvents || {}, ea = r.earnings || {};
+        const rt = r.recommendationTrend || {};
+
+        Object.assign(result, {
+          marketCap: p.marketCap?.fmt || sd.marketCap?.fmt || null,
+          exchangeName: p.exchangeName || null,
+          trailingPE: sd.trailingPE?.fmt || null,
+          forwardPE: sd.forwardPE?.fmt || null,
+          eps: ks.trailingEps?.fmt || null,
+          forwardEps: ks.forwardEps?.fmt || null,
+          week52Low: sd.fiftyTwoWeekLow?.raw ?? null,
+          week52High: sd.fiftyTwoWeekHigh?.raw ?? null,
+          beta: sd.beta?.fmt || null,
+          avgVolume: sd.averageVolume?.fmt || null,
+          fiftyDayAvg: sd.fiftyDayAverage?.raw ?? null,
+          twoHundredDayAvg: sd.twoHundredDayAverage?.raw ?? null,
+          dividendYield: sd.dividendYield?.fmt || null,
+          revenue: fd.totalRevenue?.fmt || null,
+          revenueGrowth: fd.revenueGrowth?.fmt || null,
+          grossMargins: fd.grossMargins?.fmt || null,
+          operatingMargins: fd.operatingMargins?.fmt || null,
+          profitMargins: ks.profitMargins?.fmt || null,
+          returnOnEquity: fd.returnOnEquity?.fmt || null,
+          totalCash: fd.totalCash?.fmt || null,
+          totalDebt: fd.totalDebt?.fmt || null,
+          debtToEquity: fd.debtToEquity?.fmt || null,
+          currentRatio: fd.currentRatio?.fmt || null,
+          freeCashflow: fd.freeCashflow?.fmt || null,
+          targetMeanPrice: fd.targetMeanPrice?.raw ?? null,
+          targetHighPrice: fd.targetHighPrice?.raw ?? null,
+          targetLowPrice: fd.targetLowPrice?.raw ?? null,
+          recommendationKey: fd.recommendationKey || null,
+          numberOfAnalysts: fd.numberOfAnalystOpinions?.raw ?? null,
+          priceToBook: ks.priceToBook?.fmt || null,
+          shortPercentOfFloat: ks.shortPercentOfFloat?.fmt || null,
+          sharesOutstanding: ks.sharesOutstanding?.fmt || null,
+          earningsDate: ce.earnings?.earningsDate?.[0]?.raw ? new Date(ce.earnings.earningsDate[0].raw * 1000).toISOString().split('T')[0] : null,
+          earningsAvgEst: ce.earnings?.earningsAverage?.fmt || null,
+          earningsLowEst: ce.earnings?.earningsLow?.raw ?? null,
+          earningsHighEst: ce.earnings?.earningsHigh?.raw ?? null,
+          earningsAvgEstRaw: ce.earnings?.earningsAverage?.raw ?? null,
+          currentQuarterEstimate: ea.earningsChart?.currentQuarterEstimate?.raw ?? null,
+          currentQuarterEstimateDate: ea.earningsChart?.currentQuarterEstimateDate || null,
+          earningsQuarterly: (ea.earningsChart?.quarterly || []).map(q => ({
+            date: q.date, actual: q.actual?.raw ?? null, estimate: q.estimate?.raw ?? null,
+          })),
+          recommendationTrend: (rt.trend || []).length ? {
+            strongBuy: rt.trend[0].strongBuy, buy: rt.trend[0].buy,
+            hold: rt.trend[0].hold, sell: rt.trend[0].sell, strongSell: rt.trend[0].strongSell,
+          } : null,
+        });
+
+        // Also update earningsCache while we're at it
+        const earningsArr = ce.earnings?.earningsDate;
+        const earningsDateObj = earningsArr?.length ? new Date(earningsArr[0].raw * 1000) : null;
+        earningsCache[symbol] = { date: earningsDateObj, fetchedAt: Date.now() };
+      } else if (res.status === 401) {
+        yfCrumb = null; yfCrumbFetchedAt = 0;
+      }
+    } catch (e) { console.error(`Profile quoteSummary error for ${symbol}:`, e.message); }
+  }
+
+  // 2) Sparkline (1-month chart, no auth needed)
+  try {
+    const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`;
+    const chartRes = await fetch(chartUrl, { headers: YF_HEADERS });
+    if (chartRes.ok) {
+      const chartJson = await chartRes.json();
+      const closes = chartJson.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+      result.sparkline = closes.filter(c => c !== null).map(c => +c.toFixed(2));
+    }
+  } catch (e) { console.error(`Profile sparkline error for ${symbol}:`, e.message); }
+
+  // 3) All news (up to 15)
+  try {
+    const news = await yfNews(symbol);
+    result.topNews = news;
+  } catch (e) { result.topNews = []; }
+
+  // 4) Multi-timeframe performance (price change %)
+  try {
+    const perfRanges = { '1D': '1d', '7D': '7d', '1M': '1mo', '3M': '3mo', 'YTD': 'ytd', '1Y': '1y', '2Y': '2y', '3Y': '3y' };
+    const perfResults = {};
+    for (const [label, range] of Object.entries(perfRanges)) {
+      try {
+        const interval = range === '1d' ? '5m' : '1d';
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+        const r = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(5000) });
+        if (r.ok) {
+          const j = await r.json();
+          const meta = j.chart?.result?.[0]?.meta;
+          if (meta) {
+            const prev = meta.chartPreviousClose || meta.previousClose;
+            const cur = meta.regularMarketPrice;
+            if (prev && cur) perfResults[label] = ((cur - prev) / prev) * 100;
+            else perfResults[label] = null;
+          }
+        }
+      } catch { perfResults[label] = null; }
+    }
+    result._perf = perfResults;
+  } catch { /* skip */ }
+
+  result._fetchedAt = Date.now();
+  profileCache[symbol] = result;
+  return result;
+}
+
+// ── Market Index (Dow, S&P, Nasdaq, Gold, BTC) ──
+const MARKET_INDEX_SYMBOLS = [
+  { symbol: '^DJI',    name: 'Dow 30',   shortName: 'Dow 30'  },
+  { symbol: '^GSPC',   name: 'S&P 500',  shortName: 'S&P 500' },
+  { symbol: '^IXIC',   name: 'Nasdaq',   shortName: 'Nasdaq'  },
+  { symbol: 'GC=F',    name: 'Gold',     shortName: 'Gold'    },
+  { symbol: 'BTC-USD', name: 'Bitcoin',  shortName: 'BTC'     },
+];
+
+const marketIndexCache = { data: null, fetchedAt: 0 };
+const MARKET_INDEX_TTL = 30 * 1000; // 30 seconds
+
+async function fetchMarketIndex() {
+  if (marketIndexCache.data && (Date.now() - marketIndexCache.fetchedAt) < MARKET_INDEX_TTL) return marketIndexCache.data;
+
+  // Fetch futures for pre-market indicators (Dow→YM=F, S&P→ES=F, Nasdaq→NQ=F)
+  const FUTURES_MAP = { '^DJI': 'YM=F', '^GSPC': 'ES=F', '^IXIC': 'NQ=F' };
+  const futuresResults = {};
+  await Promise.allSettled(
+    Object.entries(FUTURES_MAP).map(async ([idx, fut]) => {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(fut)}?interval=5m&range=1d&includePrePost=true`;
+      const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(6000) });
+      if (!res.ok) return;
+      const json = await res.json();
+      const meta = json.chart?.result?.[0]?.meta;
+      if (!meta) return;
+      const prev = meta.chartPreviousClose || meta.previousClose;
+      const futPrice = meta.regularMarketPrice;
+      const futChg = futPrice - prev;
+      const futChgPct = (futChg / prev) * 100;
+      futuresResults[idx] = { price: futPrice, change: futChg, changePct: futChgPct, symbol: fut, marketState: meta.marketState };
+    })
+  );
+
+  const results = await Promise.allSettled(
+    MARKET_INDEX_SYMBOLS.map(async ({ symbol, name, shortName }) => {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=5m&range=1d&includePrePost=true`;
+      const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(6000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const r = json.chart?.result?.[0];
+      if (!r) throw new Error('No data');
+      const meta = r.meta;
+      const closes = (r.indicators?.quote?.[0]?.close || []).filter(c => c !== null);
+      const prev = meta.chartPreviousClose || meta.previousClose;
+      const price = meta.regularMarketPrice;
+      const change = price - prev;
+      const changePct = (change / prev) * 100;
+      const marketState = meta.marketState || 'CLOSED';
+
+      // Try Yahoo Finance pre/post market prices directly
+      let prePost = null;
+      if (meta.preMarketPrice && meta.preMarketPrice !== price) {
+        const pp = meta.preMarketPrice;
+        const ppChg = pp - prev;
+        prePost = { type: 'Pre-Mkt', price: pp, change: ppChg, changePct: (ppChg / prev) * 100, source: 'yahoo' };
+      } else if (meta.postMarketPrice && meta.postMarketPrice !== price) {
+        const pp = meta.postMarketPrice;
+        const ppChg = pp - prev;
+        prePost = { type: 'After-Hrs', price: pp, change: ppChg, changePct: (ppChg / prev) * 100, source: 'yahoo' };
+      }
+
+      // Fallback: use futures for Dow/S&P/Nasdaq when no direct pre/post data
+      const futures = (!prePost && futuresResults[symbol]) ? futuresResults[symbol] : null;
+
+      return { symbol, name, shortName, price, change, changePct, sparkline: closes.map(c => +c.toFixed(4)), marketState, prePost, futures };
+    })
+  );
+
+  const data = results.map((r, i) => r.status === 'fulfilled' ? r.value : { ...MARKET_INDEX_SYMBOLS[i], price: null, change: null, changePct: null, sparkline: [], marketState: 'CLOSED' });
+  marketIndexCache.data = data;
+  marketIndexCache.fetchedAt = Date.now();
+  return data;
+}
+
+// ── Chart data (any time period) ──
+const chartCache = {};
+const CHART_RANGES = { '1d':'5m', '7d':'15m', '5d':'15m', '1mo':'1d', 'ytd':'1d', '1y':'1d', '2y':'1wk', '3y':'1wk', '5y':'1wk', 'max':'1mo' };
+
+async function yfChart(symbol, range, interval) {
+  const key = `${symbol}:${range}`;
+  const ttl = range === '1d' ? 2 * 60 * 1000 : 15 * 60 * 1000;
+  const cached = chartCache[key];
+  if (cached && (Date.now() - cached._fetchedAt) < ttl) return cached;
+
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&includePrePost=false`;
+  const res = await fetch(url, { headers: YF_HEADERS });
+  if (!res.ok) throw new Error(`Chart HTTP ${res.status}`);
+  const json = await res.json();
+  const r = json.chart?.result?.[0];
+  if (!r) throw new Error('No chart data');
+  const ts = r.timestamp || [];
+  const q = r.indicators?.quote?.[0] || {};
+  const meta = r.meta || {};
+  const result = {
+    symbol: meta.symbol || symbol,
+    currency: meta.currency || 'USD',
+    previousClose: meta.chartPreviousClose || meta.previousClose,
+    regularMarketPrice: meta.regularMarketPrice,
+    dataPoints: ts.map((t, i) => ({
+      timestamp: t, close: q.close?.[i] ?? null, high: q.high?.[i] ?? null,
+      low: q.low?.[i] ?? null, volume: q.volume?.[i] ?? null,
+    })).filter(d => d.close !== null),
+    _fetchedAt: Date.now(),
+  };
+  chartCache[key] = result;
+  return result;
+}
+
+// ── Quarterly financial statements ──
+const financialsCache = {};
+const FINANCIALS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+async function yfFinancials(symbol) {
+  const cached = financialsCache[symbol];
+  if (cached && (Date.now() - cached._fetchedAt) < FINANCIALS_CACHE_TTL) return cached;
+
+  await ensureCrumb();
+  if (!yfCrumb) throw new Error('No crumb available');
+
+  const modules = 'incomeStatementHistoryQuarterly,balanceSheetHistoryQuarterly,cashflowStatementHistoryQuarterly';
+  const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}&crumb=${encodeURIComponent(yfCrumb)}`;
+  const res = await fetch(url, { headers: { ...YF_UA, Cookie: yfCookies } });
+  if (!res.ok) {
+    if (res.status === 401) { yfCrumb = null; yfCrumbFetchedAt = 0; }
+    throw new Error(`Financials HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  const r = json.quoteSummary?.result?.[0] || {};
+  const is = r.incomeStatementHistoryQuarterly?.incomeStatementHistory || [];
+  const bs = r.balanceSheetHistoryQuarterly?.balanceSheetStatements || [];
+  const cf = r.cashflowStatementHistoryQuarterly?.cashflowStatements || [];
+
+  // Separate each statement type for tabbed display
+  const income = is.map(stmt => ({
+    endDate: stmt.endDate?.fmt || null,
+    revenue: stmt.totalRevenue?.raw ?? null,
+    costOfRevenue: stmt.costOfRevenue?.raw ?? null,
+    grossProfit: stmt.grossProfit?.raw ?? null,
+    researchDevelopment: stmt.researchDevelopment?.raw ?? null,
+    sellingGeneralAdmin: stmt.sellingGeneralAdministrative?.raw ?? null,
+    operatingExpense: stmt.totalOperatingExpenses?.raw ?? null,
+    operatingIncome: stmt.operatingIncome?.raw ?? null,
+    interestExpense: stmt.interestExpense?.raw ?? null,
+    incomeBeforeTax: stmt.incomeBeforeTax?.raw ?? null,
+    incomeTaxExpense: stmt.incomeTaxExpense?.raw ?? null,
+    netIncome: stmt.netIncome?.raw ?? null,
+    eps: stmt.dilutedEPS?.raw ?? null,
+    ebitda: stmt.ebitda?.raw ?? null,
+  }));
+
+  const balance = bs.map(stmt => ({
+    endDate: stmt.endDate?.fmt || null,
+    cash: stmt.cash?.raw ?? null,
+    shortTermInvestments: stmt.shortTermInvestments?.raw ?? null,
+    netReceivables: stmt.netReceivables?.raw ?? null,
+    inventory: stmt.inventory?.raw ?? null,
+    totalCurrentAssets: stmt.totalCurrentAssets?.raw ?? null,
+    propertyPlantEquipment: stmt.propertyPlantEquipment?.raw ?? null,
+    goodwill: stmt.goodWill?.raw ?? null,
+    intangibleAssets: stmt.intangibleAssets?.raw ?? null,
+    totalAssets: stmt.totalAssets?.raw ?? null,
+    accountsPayable: stmt.accountsPayable?.raw ?? null,
+    shortLongTermDebt: stmt.shortLongTermDebt?.raw ?? null,
+    totalCurrentLiabilities: stmt.totalCurrentLiabilities?.raw ?? null,
+    longTermDebt: stmt.longTermDebt?.raw ?? null,
+    totalLiabilities: stmt.totalLiab?.raw ?? null,
+    totalEquity: stmt.totalStockholderEquity?.raw ?? null,
+  }));
+
+  const cashflow = cf.map(stmt => ({
+    endDate: stmt.endDate?.fmt || null,
+    netIncome: stmt.netIncome?.raw ?? null,
+    depreciation: stmt.depreciation?.raw ?? null,
+    operatingCashflow: stmt.totalCashFromOperatingActivities?.raw ?? null,
+    capitalExpenditure: stmt.capitalExpenditures?.raw ?? null,
+    investments: stmt.investments?.raw ?? null,
+    investingCashflow: stmt.totalCashflowsFromInvestingActivities?.raw ?? null,
+    dividendsPaid: stmt.dividendsPaid?.raw ?? null,
+    netBorrowings: stmt.netBorrowings?.raw ?? null,
+    financingCashflow: stmt.totalCashFromFinancingActivities?.raw ?? null,
+    changeInCash: stmt.changeInCash?.raw ?? null,
+    freeCashflow: stmt.totalCashFromOperatingActivities?.raw != null && stmt.capitalExpenditures?.raw != null
+      ? (stmt.totalCashFromOperatingActivities.raw + stmt.capitalExpenditures.raw) : null,
+  }));
+
+  // Also keep legacy 'quarterly' for backward compat
+  const quarterly = is.map((stmt, i) => {
+    const bsStmt = bs[i] || {};
+    const cfStmt = cf[i] || {};
+    return {
+      endDate: stmt.endDate?.fmt || null,
+      revenue: stmt.totalRevenue?.raw ?? null,
+      costOfRevenue: stmt.costOfRevenue?.raw ?? null,
+      grossProfit: stmt.grossProfit?.raw ?? null,
+      operatingIncome: stmt.operatingIncome?.raw ?? null,
+      netIncome: stmt.netIncome?.raw ?? null,
+      eps: stmt.dilutedEPS?.raw ?? null,
+      ebitda: stmt.ebitda?.raw ?? null,
+      totalAssets: bsStmt.totalAssets?.raw ?? null,
+      totalLiabilities: bsStmt.totalLiab?.raw ?? null,
+      totalEquity: bsStmt.totalStockholderEquity?.raw ?? null,
+      cash: bsStmt.cash?.raw ?? null,
+      operatingCashflow: cfStmt.totalCashFromOperatingActivities?.raw ?? null,
+      capitalExpenditure: cfStmt.capitalExpenditures?.raw ?? null,
+    };
+  });
+
+  const result = { quarterly, income, balance, cashflow, _fetchedAt: Date.now() };
+  financialsCache[symbol] = result;
+  return result;
+}
+
+// ── RSS news parsing (CNBC, Bloomberg) ──
+const rssCache = { data: null, fetchedAt: 0 };
+const RSS_CACHE_TTL = 10 * 60 * 1000; // 10 min
+
+function parseRSS(xml, sourceName) {
+  const items = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  let match;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const block = match[1];
+    const title = block.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/)?.[1]?.trim() || '';
+    const link = block.match(/<link>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/link>/)?.[1]?.trim() || '';
+    const pubDate = block.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim() || '';
+    const desc = block.match(/<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/)?.[1]?.trim() || '';
+    if (title && link) {
+      items.push({
+        title, link, source: sourceName, publisher: sourceName,
+        publishedAt: pubDate ? new Date(pubDate).toISOString() : null,
+        description: desc.replace(/<[^>]+>/g, '').slice(0, 200),
+        thumbnail: null,
+      });
+    }
+  }
+  return items;
+}
+
+// ── News priority scoring ──
+const GEO_KEYWORDS = ['war','invasion','sanction','tariff','trade war','geopolitical','nato','ukraine','china','taiwan','russia','middle east','iran','israel','north korea','election','president','congress','senate','legislation','fed','federal reserve','interest rate','powell','inflation','recession','gdp','unemployment','debt ceiling','default','supply chain','opec','oil price','energy crisis'];
+const MARKET_KEYWORDS = ['earnings','beat','miss','guidance','forecast','merger','acquisition','ipo','bankruptcy','layoffs','downgrade','upgrade','buyback','dividend','revenue','profit','loss','short squeeze','rate hike','rate cut','quantitative','stimulus','bailout','ceo','cfo','quarterly'];
+const URGENCY_KEYWORDS = ['breaking','alert','urgent','emergency','crash','surge','soars','plunges','collapses','halted','suspended','investigation','indicted','fraud','crisis','record high','record low'];
+
+function scoreNewsPriority(item, watchedSymbols) {
+  let score = 0;
+  const text = (item.title + ' ' + (item.description || '')).toLowerCase();
+  const categories = [];
+
+  // Recency (max 50 pts)
+  if (item.publishedAt) {
+    const ageHours = (Date.now() - new Date(item.publishedAt).getTime()) / 3600000;
+    if (ageHours < 0.5) score += 50;
+    else if (ageHours < 1) score += 40;
+    else if (ageHours < 3) score += 30;
+    else if (ageHours < 6) score += 20;
+    else if (ageHours < 24) score += 10;
+  }
+
+  // Urgency keywords (max 30 pts)
+  const urgencyMatches = URGENCY_KEYWORDS.filter(kw => text.includes(kw)).length;
+  if (urgencyMatches > 0) { score += Math.min(30, urgencyMatches * 10); categories.push('breaking'); }
+
+  // Geopolitical (max 25 pts)
+  const geoMatches = GEO_KEYWORDS.filter(kw => text.includes(kw)).length;
+  if (geoMatches > 0) { score += Math.min(25, geoMatches * 8); categories.push('geo'); }
+
+  // Market impact (max 20 pts)
+  const mktMatches = MARKET_KEYWORDS.filter(kw => text.includes(kw)).length;
+  if (mktMatches > 0) { score += Math.min(20, mktMatches * 5); categories.push('market'); }
+
+  // Watched stocks mentioned (max 40 pts)
+  const watchedMatch = watchedSymbols.find(s => text.includes(s.toLowerCase()) || text.includes(s.toLowerCase() + ' '));
+  if (watchedMatch) { score += 40; categories.push('portfolio'); item.relatedSymbol = watchedMatch; }
+
+  return { ...item, priority: score, categories };
+}
+
+// ── X/Twitter via Nitter RSS (free mirror) ──
+const xNewsCache = { data: null, fetchedAt: 0, handles: '' };
+const X_NEWS_TTL = 10 * 60 * 1000;
+const NITTER_INSTANCES = ['nitter.privacydev.net', 'nitter.poast.org', 'nitter.nl'];
+
+async function fetchXNews(handles) {
+  if (!handles || !handles.length) return [];
+  const handleKey = handles.join(',');
+  if (xNewsCache.data && xNewsCache.handles === handleKey && (Date.now() - xNewsCache.fetchedAt) < X_NEWS_TTL) return xNewsCache.data;
+
+  const items = [];
+  for (const handle of handles.slice(0, 5)) {
+    const cleanHandle = handle.replace('@', '');
+    for (const instance of NITTER_INSTANCES) {
+      try {
+        const res = await fetch(`https://${instance}/${cleanHandle}/rss`, { headers: { ...YF_UA, 'Accept': 'application/rss+xml, application/xml, text/xml' }, signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          const xml = await res.text();
+          const parsed = parseRSS(xml, `X:@${cleanHandle}`);
+          items.push(...parsed.slice(0, 5));
+          break;
+        }
+      } catch { /* try next instance */ }
+    }
+  }
+  xNewsCache.data = items;
+  xNewsCache.fetchedAt = Date.now();
+  xNewsCache.handles = handleKey;
+  return items;
+}
+
+async function fetchRSSNews() {
+  if (rssCache.data && (Date.now() - rssCache.fetchedAt) < RSS_CACHE_TTL) return rssCache.data;
+
+  const feeds = [
+    { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', name: 'CNBC' },
+    { url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664', name: 'CNBC Markets' },
+    { url: 'https://feeds.bloomberg.com/markets/news.rss', name: 'Bloomberg' },
+    { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', name: 'WSJ Markets' },
+    { url: 'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines', name: 'MarketWatch' },
+    { url: 'https://finance.yahoo.com/news/rssindex', name: 'Yahoo Finance' },
+    { url: 'https://feeds.reuters.com/reuters/businessNews', name: 'Reuters' },
+    { url: 'https://www.investing.com/rss/news.rss', name: 'Investing.com' },
+    { url: 'https://www.ft.com/rss/home/uk', name: 'Financial Times' },
+    { url: 'https://seekingalpha.com/feed.xml', name: 'Seeking Alpha' },
+    { url: 'https://feeds.feedburner.com/thestreet/investing', name: 'TheStreet' },
+    { url: 'https://www.fool.com/a/feeds/foolwatch', name: 'Motley Fool' },
+  ];
+
+  let allItems = [];
+  await Promise.allSettled(feeds.map(async feed => {
+    try {
+      const res = await fetch(feed.url, { headers: YF_UA, signal: AbortSignal.timeout(8000) });
+      if (res.ok) { const xml = await res.text(); allItems.push(...parseRSS(xml, feed.name)); }
+    } catch (e) { console.warn(`RSS fetch failed for ${feed.name}:`, e.message); }
+  }));
+
+  // Deduplicate by title
+  const seen = new Set();
+  allItems = allItems.filter(a => { if (seen.has(a.title)) return false; seen.add(a.title); return true; });
+  allItems.sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
+  rssCache.data = allItems.slice(0, 80); // keep up to 80 articles
+  rssCache.fetchedAt = Date.now();
+  return rssCache.data;
+}
+
+// ── Aggregated latest news ──
+const latestNewsCache = { data: null, fetchedAt: 0 };
+const LATEST_NEWS_TTL = 5 * 60 * 1000;
+
+async function fetchLatestNews(watchedSymbols = [], xHandles = [], forceRefresh = false) {
+  if (!forceRefresh && latestNewsCache.data && (Date.now() - latestNewsCache.fetchedAt) < LATEST_NEWS_TTL) {
+    // Re-score with current watched symbols
+    return latestNewsCache.data.map(n => scoreNewsPriority(n, watchedSymbols));
+  }
+
+  const allNews = [];
+
+  // Yahoo Finance news per symbol (limit 6 per symbol)
+  await Promise.allSettled(watchedSymbols.slice(0, 12).map(async sym => {
+    try {
+      const news = await yfNews(sym);
+      news.slice(0, 6).forEach(n => { n.source = 'Yahoo Finance'; allNews.push(n); });
+    } catch { /* skip */ }
+  }));
+
+  // RSS feeds (CNBC, Bloomberg, Reuters, MarketWatch, Yahoo)
+  try {
+    const rss = await fetchRSSNews();
+    allNews.push(...rss);
+  } catch { /* skip */ }
+
+  // X/Twitter via Nitter RSS (user-configured handles)
+  if (xHandles && xHandles.length) {
+    try {
+      const xNews = await fetchXNews(xHandles);
+      allNews.push(...xNews);
+    } catch { /* skip */ }
+  }
+
+  // Deduplicate by title key
+  const seen = new Set();
+  const unique = allNews.filter(n => {
+    const key = n.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Score and sort by priority, then recency
+  const scored = unique.map(n => scoreNewsPriority(n, watchedSymbols));
+  scored.sort((a, b) => (b.priority - a.priority) || (new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0)));
+
+  const result = scored.slice(0, 150);
+  latestNewsCache.data = result;
+  latestNewsCache.fetchedAt = Date.now();
+  return result;
+}
+
+// ─── CRYPTO (CoinGecko free API) ──────────────────────────────────────────
+const cryptoCache = { data: null, fetchedAt: 0 };
+const CRYPTO_CACHE_TTL = 2 * 60 * 1000; // 2 min
+
+async function fetchCryptoData() {
+  if (cryptoCache.data && (Date.now() - cryptoCache.fetchedAt) < CRYPTO_CACHE_TTL) return cryptoCache.data;
+
+  try {
+    const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=true&price_change_percentage=1h%2C24h%2C7d%2C30d%2C200d%2C1y';
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
+    const data = await res.json();
+    const result = data.map(c => ({
+      id: c.id,
+      symbol: c.symbol.toUpperCase(),
+      name: c.name,
+      image: c.image,
+      price: c.current_price,
+      change1h: c.price_change_percentage_1h_in_currency,
+      change24h: c.price_change_percentage_24h_in_currency,
+      change7d: c.price_change_percentage_7d_in_currency,
+      change30d: c.price_change_percentage_30d_in_currency ?? null,
+      change200d: c.price_change_percentage_200d_in_currency ?? null,
+      change1y: c.price_change_percentage_1y_in_currency ?? null,
+      marketCap: c.market_cap,
+      volume24h: c.total_volume,
+      rank: c.market_cap_rank,
+      sparkline: c.sparkline_in_7d?.price || [],
+      high24h: c.high_24h,
+      low24h: c.low_24h,
+      ath: c.ath,
+      athChangePercent: c.ath_change_percentage,
+    }));
+    cryptoCache.data = result;
+    cryptoCache.fetchedAt = Date.now();
+    return result;
+  } catch (e) {
+    console.error('Crypto fetch error:', e.message);
+    return cryptoCache.data || [];
+  }
+}
+
+// ─── DATA STORE ───────────────────────────────────────────────────────────────
+
+let alerts = [];
+let settings = {
+  emailEnabled: false, emailAddress: '',
+  emailFrom: process.env.EMAIL_FROM || '', emailPassword: process.env.EMAIL_PASSWORD || '',
+  smsEnabled: false, phoneNumber: '',
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || '',
+  twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER || '',
+  checkIntervalMinutes: 1,
+  xHandles: [],
+  dashboardOrder: [],
+};
+let stockCache = {};
+let notificationHistory = [];
+const DATA_FILE = join(__dirname, 'data.json');
+
+if (fs.existsSync(DATA_FILE)) {
+  try {
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    alerts = data.alerts || [];
+    settings = { ...settings, ...data.settings };
+    notificationHistory = data.notificationHistory || [];
+    console.log(`✅ Loaded ${alerts.length} alert(s) from storage`);
+  } catch (e) { console.error('⚠️  Error loading data:', e.message); }
+}
+
+function saveData() {
+  try { fs.writeFileSync(DATA_FILE, JSON.stringify({ alerts, settings, notificationHistory }, null, 2)); }
+  catch (e) { console.error('Error saving data:', e.message); }
+}
+
+// ─── STOCK ROUTES ─────────────────────────────────────────────────────────────
+
+app.get('/api/stock/:symbol', async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase();
+  try {
+    const data = await yfQuote(symbol);
+    stockCache[symbol] = { ...data, lastUpdated: Date.now() };
+    res.json(data);
+  } catch (error) {
+    res.status(400).json({ error: `Could not find symbol: ${symbol}` });
+  }
+});
+
+app.get('/api/search/:query', async (req, res) => {
+  try { res.json(await yfSearch(req.params.query)); }
+  catch { res.status(400).json({ error: 'Search failed' }); }
+});
+
+app.get('/api/stock/:symbol/news', async (req, res) => {
+  try { res.json(await yfNews(req.params.symbol.toUpperCase())); }
+  catch (e) { res.status(400).json({ error: 'Could not fetch news' }); }
+});
+
+app.get('/api/stock/:symbol/earnings', async (req, res) => {
+  try {
+    const date = await yfEarningsDate(req.params.symbol.toUpperCase());
+    res.json({ earningsDate: date ? date.toISOString() : null });
+  } catch { res.status(400).json({ error: 'Could not fetch earnings date' }); }
+});
+
+app.get('/api/stock/:symbol/profile', async (req, res) => {
+  try { res.json(await yfProfile(req.params.symbol.toUpperCase())); }
+  catch (e) { res.status(400).json({ error: 'Could not fetch profile' }); }
+});
+
+app.get('/api/stock/:symbol/chart', async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase();
+  const { range = '1mo' } = req.query;
+  const interval = CHART_RANGES[range];
+  if (!interval) return res.status(400).json({ error: 'Invalid range. Allowed: ' + Object.keys(CHART_RANGES).join(', ') });
+  try { res.json(await yfChart(symbol, range, interval)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.get('/api/stock/:symbol/financials', async (req, res) => {
+  try { res.json(await yfFinancials(req.params.symbol.toUpperCase())); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.get('/api/news/rss', async (req, res) => {
+  try { res.json(await fetchRSSNews()); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.get('/api/crypto', async (req, res) => {
+  try { res.json(await fetchCryptoData()); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+const cryptoChartCache = {};
+app.get('/api/crypto/:id/chart', async (req, res) => {
+  const { id } = req.params;
+  const { range = '7d' } = req.query;
+  const now = new Date();
+  const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
+  const DAYS_MAP = { '1d': 1, '7d': 7, '30d': 30, '90d': 90, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730 };
+  const days = DAYS_MAP[range];
+  if (!days) return res.status(400).json({ error: 'Invalid range' });
+  const cacheKey = `${id}_${range}`;
+  const cached = cryptoChartCache[cacheKey];
+  if (cached && (Date.now() - cached.at) < 10 * 60 * 1000) return res.json(cached.data);
+  const fetchCgChart = async (d) => {
+    const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${d}`;
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`CoinGecko chart HTTP ${r.status}`);
+    const json = await r.json();
+    if (json.status?.error_code) throw new Error(json.status.error_message || 'CoinGecko error');
+    const prices = (json.prices || []).map(p => p[1]);
+    if (!prices.length) throw new Error('empty');
+    return prices;
+  };
+  try {
+    let prices;
+    try {
+      prices = await fetchCgChart(days);
+    } catch (e) {
+      // CoinGecko free tier may not support >365 days — fall back to 365
+      if (days > 365) { prices = await fetchCgChart(365); }
+      else throw e;
+    }
+    cryptoChartCache[cacheKey] = { data: prices, at: Date.now() };
+    res.json(prices);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── CRYPTO NEWS (multiple reputable sources) ──────────────────────────────
+const cryptoNewsCache = { data: null, at: 0 };
+async function fetchCryptoNews() {
+  if (cryptoNewsCache.data && (Date.now() - cryptoNewsCache.at) < 10 * 60 * 1000) return cryptoNewsCache.data;
+  const feeds = [
+    { url: 'https://cointelegraph.com/rss', source: 'CoinTelegraph' },
+    { url: 'https://decrypt.co/feed', source: 'Decrypt' },
+    { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
+  ];
+  const articles = [];
+  for (const feed of feeds) {
+    try {
+      const r = await fetch(feed.url, { signal: AbortSignal.timeout(6000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!r.ok) continue;
+      const xml = await r.text();
+      const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/g)].slice(0, 8);
+      for (const [item] of items) {
+        const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1]?.trim();
+        const link = (item.match(/<link>(.*?)<\/link>/) || item.match(/<guid[^>]*>(https?:\/\/[^<]+)<\/guid>/))?.[1]?.trim();
+        const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim();
+        if (title && link) articles.push({ title, link, source: feed.source, pubDate: pubDate || '' });
+      }
+    } catch (_) { /* skip failed feed */ }
+  }
+  // Sort by date desc, dedupe
+  articles.sort((a, b) => (new Date(b.pubDate) - new Date(a.pubDate)) || 0);
+  const seen = new Set();
+  const deduped = articles.filter(a => { if (seen.has(a.title)) return false; seen.add(a.title); return true; });
+  cryptoNewsCache.data = deduped.slice(0, 30);
+  cryptoNewsCache.at = Date.now();
+  return cryptoNewsCache.data;
+}
+app.get('/api/crypto/news', async (req, res) => {
+  try { res.json(await fetchCryptoNews()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/market-index', async (req, res) => {
+  try { res.json(await fetchMarketIndex()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/news/latest', async (req, res) => {
+  try {
+    // Accept extra symbols from query param
+    const qSymbols = req.query.symbols ? req.query.symbols.split(',').map(s => s.trim().toUpperCase()) : [];
+    const alertSymbols = [...new Set(alerts.map(a => a.symbol))];
+    const allSymbols = [...new Set([...alertSymbols, ...qSymbols])];
+    const xHandles = settings.xHandles || [];
+    const forceRefresh = req.query.refresh === '1';
+    res.json(await fetchLatestNews(allSymbols, xHandles, forceRefresh));
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ─── ALERT ROUTES ─────────────────────────────────────────────────────────────
+
+app.get('/api/alerts', (req, res) => res.json(alerts));
+
+// Single alert (backward compat)
+app.post('/api/alerts', async (req, res) => {
+  const { symbol, conditionType, conditionValue, notificationMethods, repeatAlert, customName } = req.body;
+  if (!symbol || !conditionType || conditionValue === undefined || !notificationMethods?.length) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  try {
+    const quote = await yfQuote(symbol.toUpperCase());
+    const alert = makeAlert(symbol.toUpperCase(), customName || quote.name, conditionType, conditionValue, quote.price, notificationMethods, repeatAlert);
+    alerts.push(alert);
+    stockCache[alert.symbol] = { ...quote, lastUpdated: Date.now() };
+    saveData();
+    res.status(201).json(alert);
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid symbol or could not fetch price' });
+  }
+});
+
+// Batch alerts (multiple conditions at once)
+app.post('/api/alerts/batch', async (req, res) => {
+  const { symbol, conditions, notificationMethods, repeatAlert, customName } = req.body;
+  if (!symbol || !conditions?.length || !notificationMethods?.length) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  try {
+    const quote = await yfQuote(symbol.toUpperCase());
+    const created = [];
+    for (const c of conditions) {
+      if (!c.conditionType || c.conditionValue === undefined) continue;
+      const alert = makeAlert(symbol.toUpperCase(), customName || quote.name, c.conditionType, c.conditionValue, quote.price, notificationMethods, repeatAlert);
+      alerts.push(alert);
+      created.push(alert);
+    }
+    stockCache[symbol.toUpperCase()] = { ...quote, lastUpdated: Date.now() };
+    saveData();
+    res.status(201).json(created);
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid symbol or could not fetch price' });
+  }
+});
+
+function makeAlert(symbol, name, conditionType, conditionValue, basePrice, notificationMethods, repeatAlert) {
+  return {
+    id: uuidv4(), symbol, name, conditionType,
+    conditionValue: parseFloat(conditionValue), basePrice,
+    notificationMethods, repeatAlert: !!repeatAlert,
+    isActive: true, createdAt: new Date().toISOString(),
+    lastTriggered: null, triggeredCount: 0,
+  };
+}
+
+app.delete('/api/alerts/:id', (req, res) => {
+  const idx = alerts.findIndex(a => a.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Alert not found' });
+  alerts.splice(idx, 1); saveData();
+  res.json({ success: true });
+});
+
+app.put('/api/alerts/:id/toggle', (req, res) => {
+  const alert = alerts.find(a => a.id === req.params.id);
+  if (!alert) return res.status(404).json({ error: 'Alert not found' });
+  alert.isActive = !alert.isActive; saveData();
+  res.json(alert);
+});
+
+// ─── SETTINGS ROUTES ──────────────────────────────────────────────────────────
+
+app.get('/api/settings', (req, res) => {
+  res.json({
+    emailEnabled: settings.emailEnabled, emailAddress: settings.emailAddress, emailFrom: settings.emailFrom,
+    smsEnabled: settings.smsEnabled, phoneNumber: settings.phoneNumber,
+    twilioPhoneNumber: settings.twilioPhoneNumber,
+    twilioAccountSid: settings.twilioAccountSid ? settings.twilioAccountSid.slice(0, 4) + '****' + settings.twilioAccountSid.slice(-4) : '',
+    checkIntervalMinutes: settings.checkIntervalMinutes,
+    hasEmailPassword: !!settings.emailPassword,
+    hasTwilioCredentials: !!(settings.twilioAccountSid && settings.twilioAuthToken),
+    xHandles: settings.xHandles || [],
+    dashboardOrder: settings.dashboardOrder || [],
+  });
+});
+
+app.put('/api/settings', (req, res) => {
+  const update = { ...req.body };
+  if (update.emailPassword === '' && settings.emailPassword) delete update.emailPassword;
+  if (update.twilioAuthToken === '' && settings.twilioAuthToken) delete update.twilioAuthToken;
+  if (update.twilioAccountSid?.includes('****')) delete update.twilioAccountSid;
+  settings = { ...settings, ...update }; saveData();
+  if (update.checkIntervalMinutes !== undefined) restartCron();
+  res.json({ success: true });
+});
+
+// ─── DASHBOARD ORDER ──────────────────────────────────────────────────────────
+
+app.put('/api/dashboard/order', (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'order must be an array' });
+  settings.dashboardOrder = order;
+  saveData();
+  res.json({ success: true });
+});
+
+// ─── HISTORY ROUTES ───────────────────────────────────────────────────────────
+
+app.get('/api/history', (req, res) => res.json(notificationHistory.slice(0, 100)));
+app.delete('/api/history', (req, res) => { notificationHistory = []; saveData(); res.json({ success: true }); });
+
+// ─── TEST NOTIFICATIONS ───────────────────────────────────────────────────────
+
+app.post('/api/test/email', async (req, res) => {
+  try { await sendEmail('Test Alert', 'Email notifications configured correctly! ✅'); res.json({ success: true, message: 'Test email sent!' }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post('/api/test/sms', async (req, res) => {
+  try { await sendSMS('📈 Stock Tracker Test: SMS working! ✅'); res.json({ success: true, message: 'Test SMS sent!' }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ─── NOTIFICATION HELPERS ─────────────────────────────────────────────────────
+
+async function sendEmail(subject, message) {
+  if (!settings.emailEnabled || !settings.emailAddress || !settings.emailFrom || !settings.emailPassword)
+    throw new Error('Email not fully configured.');
+  const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: settings.emailFrom, pass: settings.emailPassword } });
+  await transporter.sendMail({
+    from: `"Stock Tracker 📈" <${settings.emailFrom}>`, to: settings.emailAddress, subject: `🔔 ${subject}`,
+    html: `<div style="font-family:-apple-system,Arial,sans-serif;max-width:600px;margin:0 auto;background:#0d1117;color:#c9d1d9;border-radius:12px;overflow:hidden;border:1px solid #30363d"><div style="background:linear-gradient(135deg,#4361ee,#4cc9f0);padding:28px 32px"><h1 style="margin:0;font-size:22px;color:#fff">📈 Stock Alert!</h1></div><div style="padding:28px 32px"><p style="font-size:16px;line-height:1.6;color:#c9d1d9;margin:0 0 24px">${message}</p><div style="background:#161b22;border-radius:8px;padding:14px 16px;font-size:12px;color:#6e7681;border:1px solid #30363d">Stock Volatility Tracker · ${new Date().toLocaleString()}</div></div></div>`,
+  });
+}
+
+async function sendSMS(message) {
+  if (!settings.smsEnabled || !settings.phoneNumber || !settings.twilioAccountSid || !settings.twilioAuthToken)
+    throw new Error('SMS not fully configured.');
+  const client = twilio(settings.twilioAccountSid, settings.twilioAuthToken);
+  await client.messages.create({ body: message, from: settings.twilioPhoneNumber, to: settings.phoneNumber });
+}
+
+// ─── ALERT LOGIC ──────────────────────────────────────────────────────────────
+
+function checkCondition(alert, price) {
+  const { conditionType, conditionValue: val, basePrice } = alert;
+  const pct = ((price - basePrice) / basePrice) * 100;
+  const abs = price - basePrice;
+  switch (conditionType) {
+    case 'percent_up':      return pct >= val;
+    case 'percent_down':    return pct <= -val;
+    case 'price_above':     return price >= val;
+    case 'price_below':     return price <= val;
+    case 'abs_up':          return abs >= val;
+    case 'abs_down':        return abs <= -val;
+    case 'earnings_before': return false; // handled separately
+    default: return false;
+  }
+}
+
+function conditionLabel(type, val) {
+  switch (type) {
+    case 'percent_up':      return `rises ≥ +${val}%`;
+    case 'percent_down':    return `falls ≥ −${val}%`;
+    case 'price_above':     return `price ≥ $${val}`;
+    case 'price_below':     return `price ≤ $${val}`;
+    case 'abs_up':          return `rises ≥ +$${val}`;
+    case 'abs_down':        return `falls ≥ −$${val}`;
+    case 'earnings_before': return `${val} day(s) before earnings`;
+    default: return '';
+  }
+}
+
+function buildMessage(alert, price) {
+  if (alert.conditionType === 'earnings_before') return ''; // earnings has its own message
+  const pct = ((price - alert.basePrice) / alert.basePrice) * 100;
+  const sign = pct >= 0 ? '+' : '';
+  return `${alert.symbol} (${alert.name}) — "${conditionLabel(alert.conditionType, alert.conditionValue)}" met. Current: $${price.toFixed(2)} (${sign}${pct.toFixed(2)}% from base $${alert.basePrice.toFixed(2)})`;
+}
+
+function fireNotification(alert, message) {
+  const notification = {
+    id: uuidv4(), alertId: alert.id, symbol: alert.symbol, name: alert.name,
+    message, conditionType: alert.conditionType, conditionValue: alert.conditionValue,
+    timestamp: new Date().toISOString(), methods: alert.notificationMethods,
+  };
+  notificationHistory.unshift(notification);
+  if (notificationHistory.length > 200) notificationHistory.length = 200;
+
+  if (alert.notificationMethods.includes('popup')) io.emit('alertTriggered', notification);
+  if (alert.notificationMethods.includes('email')) sendEmail(`${alert.symbol} Alert!`, message).catch(e => console.error('Email:', e.message));
+  if (alert.notificationMethods.includes('sms'))   sendSMS(`📈 ${message}`).catch(e => console.error('SMS:', e.message));
+
+  alert.lastTriggered = new Date().toISOString();
+  alert.triggeredCount++;
+  if (!alert.repeatAlert) alert.isActive = false;
+  saveData();
+  io.emit('alertUpdated', alert);
+  console.log(`🔔 ${message}`);
+}
+
+// ─── BACKGROUND CHECKER ───────────────────────────────────────────────────────
+
+let cronJob = null;
+
+function restartCron() {
+  if (cronJob) cronJob.stop();
+  const mins = Math.max(1, parseInt(settings.checkIntervalMinutes) || 1);
+  const expr = mins === 1 ? '* * * * *' : `*/${mins} * * * *`;
+  cronJob = cron.schedule(expr, checkAlerts);
+  console.log(`⏱  Checking every ${mins} minute(s)`);
+}
+
+async function checkAlerts() {
+  const active = alerts.filter(a => a.isActive);
+  if (!active.length) return;
+
+  const symbols = [...new Set(active.map(a => a.symbol))];
+
+  for (const symbol of symbols) {
+    try {
+      const quote = await yfQuote(symbol);
+      const price = quote.price;
+
+      stockCache[symbol] = { ...stockCache[symbol], ...quote, lastUpdated: Date.now() };
+      io.emit('priceUpdate', { symbol, price, change: quote.change, changePercent: quote.changePercent, marketState: quote.marketState, timestamp: Date.now() });
+
+      // ── Price-based alerts ──
+      for (const alert of active.filter(a => a.symbol === symbol && a.conditionType !== 'earnings_before')) {
+        if (!checkCondition(alert, price)) continue;
+        fireNotification(alert, buildMessage(alert, price));
+      }
+
+      // ── Earnings-based alerts ──
+      const earningsAlerts = active.filter(a => a.symbol === symbol && a.conditionType === 'earnings_before');
+      if (earningsAlerts.length) {
+        try {
+          const earningsDate = await yfEarningsDate(symbol);
+          if (earningsDate) {
+            const daysUntil = (earningsDate - new Date()) / (1000 * 60 * 60 * 24);
+            for (const alert of earningsAlerts) {
+              if (daysUntil <= alert.conditionValue && daysUntil >= 0) {
+                const msg = `${alert.symbol} (${alert.name}) — Earnings in ~${Math.round(daysUntil)} day(s) on ${earningsDate.toLocaleDateString()}. Alert threshold: ${alert.conditionValue} day(s).`;
+                fireNotification(alert, msg);
+              }
+            }
+          }
+        } catch (e) { console.error(`Earnings check error for ${symbol}:`, e.message); }
+      }
+    } catch (err) {
+      console.error(`Error checking ${symbol}:`, err.message);
+    }
+  }
+  saveData();
+}
+
+// ─── SOCKET.IO ────────────────────────────────────────────────────────────────
+
+io.on('connection', socket => {
+  console.log('🔌 Connected:', socket.id);
+  socket.emit('init', { alerts, stockCache, notificationHistory: notificationHistory.slice(0, 50) });
+  socket.on('disconnect', () => console.log('🔌 Disconnected:', socket.id));
+});
+
+// ─── START ────────────────────────────────────────────────────────────────────
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`\n🚀 Stock Volatility Tracker → http://localhost:${PORT}\n`);
+  restartCron();
+  if (alerts.length > 0) setTimeout(checkAlerts, 2000);
+});

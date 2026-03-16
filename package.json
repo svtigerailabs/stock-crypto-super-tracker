@@ -1,0 +1,21 @@
+{
+  "name": "stock-volatility-tracker",
+  "version": "1.0.0",
+  "description": "Real-time US stock & ETF volatility tracker with email, SMS, and browser notifications",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.8",
+    "socket.io": "^4.7.4",
+    "twilio": "^5.0.0",
+    "uuid": "^9.0.0"
+  }
+}
