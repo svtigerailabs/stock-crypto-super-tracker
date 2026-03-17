@@ -67,6 +67,20 @@ async function init() {
   setTimeout(_preloadCryptoCharts, 8000);
   setInterval(_preloadCryptoCharts, 60 * 1000); // refresh charts every 1 min
 
+  // Preload sector data eagerly so it's ready when user clicks
+  setTimeout(() => {
+    if (!_sectorsData) {
+      const cached = _loadSectorCache();
+      if (cached) { _sectorsData = cached.data; _sectorAvailable = cached.available || {}; }
+      else api('GET', '/sectors').then(res => {
+        _sectorsData = res.sectors || res;
+        _sectorAvailable = res.available || {};
+        _saveSectorCache(_sectorsData, _sectorAvailable);
+        console.log('Sector data preloaded:', _sectorsData?.length, 'sectors');
+      }).catch(() => {});
+    }
+  }, 12000);
+
   // Eagerly load all stock profiles so data columns populate on first view
   setTimeout(() => loadProfilesBatch(getDashSymbols()), 3000);
   // Refresh profiles every 15 min to keep data current
@@ -377,6 +391,7 @@ function navigate(view) {
     case 'screener': initTVScreener(); break;
     case 'tradingview': initTVTradingView(); break;
     case 'crypto': renderCryptoDashboard(); loadCryptoNews(); break;
+    case 'crypto-news': renderCryptoNewsView(); break;
     case 'settings': renderSettings(); break;
   }
 }
@@ -437,6 +452,8 @@ async function loadMarketIndex() {
     const data = await api('GET', '/market-index');
     marketIndexData = data;
     renderMarketIndexBar();
+    // Re-render stock ticker with market index data if headlines not loaded yet
+    if (!tickerState.stock.articles.length) renderTickerMarquee('stock');
   } catch (e) { /* silent */ }
 }
 
@@ -560,12 +577,38 @@ async function fetchTickerHeadlines(type) {
   }
 }
 
+/* Build the always-available market index ticker items (Top 5 key indices) */
+function _buildMarketIndexTickerItems() {
+  if (!marketIndexData?.length) return '';
+  const TOP5 = ['SPY','QQQ','DIA','BTC-USD','GC=F']; // S&P, Nasdaq, Dow, BTC, Gold
+  const items = marketIndexData
+    .filter(d => TOP5.includes(d.symbol) && d.price)
+    .sort((a, b) => TOP5.indexOf(a.symbol) - TOP5.indexOf(b.symbol));
+  if (!items.length) return '';
+  return items.map(d => {
+    const dir = (d.changePct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+    const sign = d.changePct >= 0 ? '+' : '';
+    const priceStr = d.price >= 1000
+      ? d.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : d.price.toFixed(2);
+    return `<span class="ticker-item">` +
+      `<span class="ticker-title">${d.shortName || d.symbol}</span>` +
+      `<span class="ticker-meta" style="color:${dir}">$${priceStr} (${sign}${(d.changePct||0).toFixed(2)}%)</span>` +
+      `<span class="ticker-sep">◆</span></span>`;
+  }).join('');
+}
+
 function renderTickerMarquee(type) {
   const articles = tickerState[type].articles;
   const trackEl = document.getElementById(`${type}-ticker-track`);
   if (!trackEl) return;
   if (!articles.length) {
-    // Fallback: show live prices while retrying
+    // Fallback 1: Market index data — always available after 30s
+    if (type === 'stock') {
+      const mktItems = _buildMarketIndexTickerItems();
+      if (mktItems) { trackEl.innerHTML = mktItems + mktItems; _restartTickerAnim(trackEl); return; }
+    }
+    // Fallback 2: Stock portfolio prices
     if (type === 'stock' && Object.keys(state.stocks).length) {
       const items = Object.entries(state.stocks).slice(0, 10).map(([sym, s]) => {
         const chg = s.changePercent;
@@ -576,6 +619,7 @@ function renderTickerMarquee(type) {
       }).join('');
       if (items) { trackEl.innerHTML = items + items; _restartTickerAnim(trackEl); return; }
     }
+    // Fallback 3: Crypto prices
     if (type === 'crypto' && state.cryptoData?.length) {
       const items = state.cryptoData.slice(0, 8).map(c =>
         `<span class="ticker-item">
@@ -585,8 +629,8 @@ function renderTickerMarquee(type) {
         </span>`).join('');
       if (items) { trackEl.innerHTML = items + items; _restartTickerAnim(trackEl); return; }
     }
-    // Last resort: show a loading hint (prices fallback above should have caught this)
-    trackEl.innerHTML = '<span class="ticker-loading">Fetching headlines…</span>';
+    // Last resort: brief loading message (replaced within 30s by market data)
+    trackEl.innerHTML = '<span class="ticker-loading">Loading market data…</span>';
     return;
   }
 
@@ -2385,7 +2429,7 @@ async function showStockDetailPopup(symbol) {
     const chartHtml = `
       <div class="chart-section" style="margin-bottom:12px;padding:4px">
         <div class="chart-period-buttons" id="chart-periods-${symbol}" style="justify-content:flex-start">
-          ${chartRanges.map(([r,l]) => `<button class="chart-period-btn${r==='1mo'?' active':''}" data-range="${r}">${l}</button>`).join('')}
+          ${chartRanges.map(([r,l]) => `<button class="chart-period-btn${r==='1d'?' active':''}" data-range="${r}">${l}</button>`).join('')}
         </div>
         <div class="chart-container" id="chart-${symbol}"><div class="chart-loading">Loading chart…</div></div>
         <div class="chart-stats" id="chart-stats-${symbol}"></div>
@@ -2401,13 +2445,14 @@ async function showStockDetailPopup(symbol) {
     bodyEl.appendChild(tmp);
 
     // Initialize chart + wire period buttons
-    loadChart(symbol, '1mo');
+    loadChart(symbol, '1d');
     document.querySelectorAll(`#chart-periods-${symbol} .chart-period-btn`).forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll(`#chart-periods-${symbol} .chart-period-btn`).forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         loadChart(symbol, btn.dataset.range);
       });
+      btn.addEventListener('mouseenter', () => { loadChart(symbol, btn.dataset.range); });
     });
   } catch (e) {
     bodyEl.innerHTML = `<div class="hover-loading" style="padding:24px">Failed to load: ${e.message}</div>`;
@@ -2898,6 +2943,118 @@ async function renderLatestNews() {
   await refreshLatestNews();
 }
 
+/* ─── CRYPTO NEWS VIEW ─────────────────────────────────────────── */
+let _cryptoNewsViewFilter = 'all';
+let _cryptoNewsViewRefreshTimer = null;
+
+async function renderCryptoNewsView() {
+  const view = document.getElementById('crypto-news-view');
+  if (!view) return;
+
+  view.innerHTML = `
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">₿ Crypto News</h1>
+        <p class="view-subtitle" id="crypto-news-subtitle">Latest news from top crypto sources · Updated every 10 min</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-secondary" onclick="loadCryptoNews(true).then(renderCryptoNewsView)">🔄 Refresh</button>
+      </div>
+    </div>
+    <!-- source filter tabs -->
+    <div class="news-source-tabs" id="crypto-news-tabs">
+      <button class="news-tab active" data-src="all" onclick="setCryptoNewsFilter('all')">All Sources</button>
+      <button class="news-tab" data-src="CryptoCompare" onclick="setCryptoNewsFilter('CryptoCompare')">CryptoCompare</button>
+      <button class="news-tab" data-src="CoinTelegraph" onclick="setCryptoNewsFilter('CoinTelegraph')">CoinTelegraph</button>
+      <button class="news-tab" data-src="CoinDesk" onclick="setCryptoNewsFilter('CoinDesk')">CoinDesk</button>
+      <button class="news-tab" data-src="Decrypt" onclick="setCryptoNewsFilter('Decrypt')">Decrypt</button>
+      <button class="news-tab" data-src="Bitcoin Magazine" onclick="setCryptoNewsFilter('Bitcoin Magazine')">Bitcoin Mag</button>
+      <button class="news-tab" data-src="Google News" onclick="setCryptoNewsFilter('Google News')">Google News</button>
+      <button class="news-tab" data-src="x" onclick="setCryptoNewsFilter('x')">𝕏 Twitter</button>
+    </div>
+    <div id="crypto-news-view-list" class="latest-news-list">
+      <div class="news-loading">Loading crypto news…</div>
+    </div>`;
+
+  // Restore active tab
+  document.querySelectorAll('#crypto-news-tabs .news-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.src === _cryptoNewsViewFilter);
+  });
+
+  // Load if cache empty
+  if (!_cryptoNewsCache.length) {
+    await loadCryptoNews();
+  }
+  renderCryptoNewsViewList();
+
+  // Auto-refresh every 10 min when view is active
+  if (_cryptoNewsViewRefreshTimer) clearInterval(_cryptoNewsViewRefreshTimer);
+  _cryptoNewsViewRefreshTimer = setInterval(() => {
+    if (state.view === 'crypto-news') {
+      loadCryptoNews(true).then(renderCryptoNewsViewList);
+    } else {
+      clearInterval(_cryptoNewsViewRefreshTimer);
+      _cryptoNewsViewRefreshTimer = null;
+    }
+  }, 10 * 60 * 1000);
+}
+
+function setCryptoNewsFilter(src) {
+  _cryptoNewsViewFilter = src;
+  document.querySelectorAll('#crypto-news-tabs .news-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.src === src);
+  });
+  renderCryptoNewsViewList();
+}
+
+function renderCryptoNewsViewList() {
+  const list = document.getElementById('crypto-news-view-list');
+  if (!list) return;
+
+  if (!_cryptoNewsCache.length) {
+    list.innerHTML = '<div class="news-loading">Loading crypto news…</div>';
+    return;
+  }
+
+  let articles = _cryptoNewsCache;
+  if (_cryptoNewsViewFilter !== 'all') {
+    if (_cryptoNewsViewFilter === 'x') {
+      articles = articles.filter(a => (a.source || '').startsWith('X @'));
+    } else {
+      articles = articles.filter(a => (a.source || '').toLowerCase().includes(_cryptoNewsViewFilter.toLowerCase()));
+    }
+  }
+
+  if (!articles.length) {
+    list.innerHTML = `<div class="news-empty">No articles from this source. <button class="btn-sm" onclick="setCryptoNewsFilter('all')">Show All</button></div>`;
+    return;
+  }
+
+  // Update subtitle
+  const sub = document.getElementById('crypto-news-subtitle');
+  if (sub) sub.textContent = `${articles.length} articles · updated ${new Date().toLocaleTimeString()}`;
+
+  list.innerHTML = articles.slice(0, 80).map(a => {
+    const ts = a.publishedAt || a.pubDate;
+    const date = ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const ageHours = ts ? (Date.now() - new Date(ts).getTime()) / 3600000 : Infinity;
+    const freshDot = ageHours < 1 ? '<span class="crypto-news-fresh-dot"></span>' : '';
+    const isX = (a.source || '').startsWith('X @');
+    const srcLabel = isX
+      ? `<span class="crypto-news-src-label x-label">𝕏 ${a.source.replace('X @', '@')}</span>`
+      : `<span class="crypto-news-src-label">${a.source || 'News'}</span>`;
+    return `<div class="latest-news-item">
+      <div class="crypto-news-card-source">
+        ${srcLabel}
+        <span class="news-item-time">${freshDot}${date}</span>
+      </div>
+      <div class="news-item-title">
+        <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function showNewsCustomize() {
   const panel = document.getElementById('news-customize-panel');
   if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
@@ -3359,7 +3516,7 @@ function renderCryptoHoverPopup(c, el) {
       }).join('')}
     </div>
     <div class="hover-popup-periods" id="${popupId}-periods">
-      ${POPUP_PERIODS.map(p => `<button class="hover-popup-period-btn${p.range === '7d' ? ' active' : ''}" onclick="event.stopPropagation();loadCryptoPopupChart('${c.id}','${p.range}',this,'${popupId}')">${p.label}</button>`).join('')}
+      ${POPUP_PERIODS.map(p => `<button class="hover-popup-period-btn${p.range === '1d' ? ' active' : ''}" onclick="event.stopPropagation();loadCryptoPopupChart('${c.id}','${p.range}',this,'${popupId}')" onmouseenter="loadCryptoPopupChart('${c.id}','${p.range}',this,'${popupId}')">${p.label}</button>`).join('')}
     </div>
     <div class="hover-popup-chart-wrap" id="${popupId}-chart"><div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading chart…</div></div>
     <div class="hover-stats-grid">
@@ -3369,7 +3526,7 @@ function renderCryptoHoverPopup(c, el) {
       <div class="hover-stat"><span class="hover-stat-label">ATH Change</span><span class="hover-stat-value" style="color:var(--red)">${c.athChangePercent != null ? c.athChangePercent.toFixed(1) + '%' : '—'}</span></div>
     </div>`;
   // Auto-load the default 7D chart
-  loadCryptoPopupChart(c.id, '7d', el.querySelector('.hover-popup-period-btn.active'), popupId);
+  loadCryptoPopupChart(c.id, '1d', el.querySelector('.hover-popup-period-btn.active'), popupId);
 
   // Bridge: keep popup visible when mouse moves from card into popup
   const card = el.closest('.crypto-card, .crypto-compact-card');
@@ -4025,7 +4182,7 @@ async function _showSectorPopup(anchorEl, symbol, name) {
   }
 
   // Position popup near mouse cursor (not at element right edge)
-  const popupW = 360, popupH = 340;
+  const popupW = 560, popupH = 480;
   let left = _mouseX + 16;
   let top = _mouseY + window.scrollY - 20;
   // Keep within viewport
@@ -4066,7 +4223,7 @@ async function _showSectorPopup(anchorEl, symbol, name) {
     if (chartEl && popup.classList.contains('snp-active')) {
       const prices = (chartData.dataPoints || []).map(p => p.close).filter(Boolean);
       if (prices.length > 1) {
-        const svg = buildSparklineSVG(prices, 332, 56, '#77DD77', '#FF6B6B');
+        const svg = buildSparklineSVG(prices, 532, 100, '#77DD77', '#FF6B6B');
         chartEl.innerHTML = svg || '<div class="snp-chart-loading">No chart data</div>';
       } else {
         chartEl.innerHTML = '<div class="snp-chart-loading">No chart data</div>';
@@ -4331,6 +4488,7 @@ document.addEventListener('click', function(e) {
 /* ─── ECONOMIC CALENDAR (Finviz-style) ─────────────────────── */
 let _econCalData = [];
 let _econCalLoaded = false;
+let _econCalRange = '1w';
 
 const COUNTRY_FLAGS = {
   USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', CAD: '🇨🇦', AUD: '🇦🇺',
@@ -4348,6 +4506,12 @@ async function loadEconCalendar() {
   renderEconCalendar();
 }
 
+function setEconCalRange(range) {
+  _econCalRange = range;
+  document.querySelectorAll('.cal-range-btn').forEach(b => b.classList.toggle('active', b.dataset.range === range));
+  renderEconCalendar();
+}
+
 function renderEconCalendar() {
   const container = document.getElementById('econ-cal-table');
   if (!container) return;
@@ -4361,36 +4525,31 @@ function renderEconCalendar() {
   const showHigh = document.getElementById('econ-impact-high')?.checked ?? true;
   const showMedium = document.getElementById('econ-impact-medium')?.checked ?? true;
   const showLow = document.getElementById('econ-impact-low')?.checked ?? false;
-  const showUSD = document.getElementById('econ-country-usd')?.checked ?? true;
-  const showEUR = document.getElementById('econ-country-eur')?.checked ?? false;
-  const showGBP = document.getElementById('econ-country-gbp')?.checked ?? false;
-  const showJPY = document.getElementById('econ-country-jpy')?.checked ?? false;
-  const showAll = document.getElementById('econ-country-all')?.checked ?? false;
   const searchQ = (document.getElementById('econ-search-input')?.value || '').toLowerCase().trim();
-
-  const allowedCountries = new Set();
-  if (showAll) {
-    Object.keys(COUNTRY_FLAGS).forEach(c => allowedCountries.add(c));
-    // Also allow any not in map
-    _econCalData.forEach(e => allowedCountries.add(e.country));
-  } else {
-    if (showUSD) allowedCountries.add('USD');
-    if (showEUR) allowedCountries.add('EUR');
-    if (showGBP) allowedCountries.add('GBP');
-    if (showJPY) allowedCountries.add('JPY');
-  }
 
   const impactFilter = new Set();
   if (showHigh) impactFilter.add('High');
   if (showMedium) impactFilter.add('Medium');
   if (showLow) { impactFilter.add('Low'); impactFilter.add('Holiday'); }
 
-  // Filter events
+  // Filter events — USD only
   let events = _econCalData.filter(e => {
-    if (!allowedCountries.has(e.country)) return false;
+    if (e.country !== 'USD' && e.country) return false;
     if (!impactFilter.has(e.impact)) return false;
     if (searchQ && !(e.title || '').toLowerCase().includes(searchQ) && !(e.country || '').toLowerCase().includes(searchQ)) return false;
     return true;
+  });
+
+  // Date range filter
+  const now = new Date();
+  let rangeEnd = new Date();
+  if (_econCalRange === '1w') rangeEnd = new Date(now.getTime() + 7 * 86400000);
+  else if (_econCalRange === '1m') rangeEnd = new Date(now.getTime() + 30 * 86400000);
+  else if (_econCalRange === '1q') rangeEnd = new Date(now.getTime() + 91 * 86400000);
+  else if (_econCalRange === '1y') rangeEnd = new Date(now.getTime() + 365 * 86400000);
+  events = events.filter(e => {
+    const d = new Date(e.date);
+    return d >= new Date(now.getTime() - 86400000) && d <= rangeEnd; // include yesterday to catch today's events
   });
 
   if (!events.length) {
@@ -4524,16 +4683,24 @@ function initTVCalendar() {
   });
 }
 
+let _screenerLength = 50;
+
+function setScreenerLength(n) {
+  _screenerLength = n;
+  document.querySelectorAll('.screener-len-btn').forEach(b => b.classList.toggle('active', b.dataset.len == n));
+  initTVScreener();
+}
+
 function initTVScreener() {
   // Re-init if filters changed
   const container = document.getElementById('tv-screener-container');
   if (container) { delete container.dataset.initialized; container.innerHTML = ''; }
   const market = document.getElementById('screener-market')?.value || 'america';
-  const col = document.getElementById('screener-column')?.value || 'overview';
+  const col = document.getElementById('screener-column')?.value || 'performance';
   const screen = document.getElementById('screener-screen')?.value || 'most_capitalized';
   _injectTVWidget('tv-screener-container', 'screener', {
     width: '100%',
-    height: 650,
+    height: Math.max(600, _screenerLength <= 50 ? 650 : _screenerLength <= 100 ? 800 : 1200),
     defaultColumn: col,
     defaultScreen: screen,
     market: market,

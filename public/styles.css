@@ -1285,10 +1285,26 @@ html, body {
   padding: 16px 20px;
 }
 .stock-detail-popup-content {
-  /* same content as hover popup but in modal */
+  padding: 0 4px;
 }
-.stock-detail-popup-content .hover-sparkline { margin: 0 0 12px; }
-.stock-detail-popup-content .hover-stats-grid { margin: 8px 0; }
+.stock-detail-popup-content .hover-sparkline { margin: 0 0 16px; border-radius: 8px; overflow: hidden; }
+.stock-detail-popup-content .hover-stats-grid { margin: 12px 0; gap: 8px 16px; }
+.stock-detail-popup-content .perf-bar { margin: 0 0 14px; padding: 10px 14px; background: var(--card); border-radius: 8px; }
+.stock-detail-popup-content .hover-news-section { margin-top: 16px; }
+.stock-detail-popup-content .hover-earnings { margin-top: 16px; padding: 12px 14px; background: var(--card); border-radius: 8px; }
+.stock-detail-popup-content .detail-section-title { margin-top: 16px; }
+.stock-detail-popup-content .detail-alert-row { padding: 8px 0; }
+.chart-section { margin: 0 0 16px; }
+.chart-period-buttons { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+.chart-period-btn {
+  flex: 1; min-width: 36px; padding: 5px 4px; font-size: 11px; font-weight: 700;
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-dim); cursor: pointer; font-family: inherit; transition: all .15s;
+  text-align: center;
+}
+.chart-period-btn:hover { color: var(--text); border-color: var(--blue); background: var(--card); }
+.chart-period-btn.active { background: var(--blue-dim); border-color: var(--blue); color: #fff; }
+.chart-container { background: var(--card); border-radius: 8px; padding: 10px; min-height: 200px; position: relative; }
 
 /* ═══════════════════════════════════════════════════════════════
    ENHANCED NEWS VIEW
@@ -1635,7 +1651,7 @@ html, body {
 /* ── Sector news hover popup ── */
 .sector-news-popup {
   position: absolute;
-  width: 360px;
+  width: 560px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1825,9 +1841,9 @@ html, body {
 
 /* ── Sector hover chart ── */
 .snp-chart-wrap {
-  padding: 6px 14px 4px; height: 70px; position: relative;
+  padding: 6px 14px 4px; height: 116px; position: relative;
 }
-.snp-chart-wrap svg { display: block; width: 100%; height: 60px; }
+.snp-chart-wrap svg { display: block; width: 100%; height: 100px; }
 .snp-chart-loading { font-size: 11px; color: var(--text-dim); text-align: center; padding: 20px 0; }
 
 /* ── Sector popup footer ── */
@@ -2035,3 +2051,45 @@ html, body {
   background: var(--green); margin-right: 4px; vertical-align: middle;
   box-shadow: 0 0 5px rgba(119,221,119,.5);
 }
+
+/* ── Crypto News View (matches news view) ── */
+#crypto-news-view .news-source-tabs { margin-bottom: 16px; }
+
+/* ── Calendar compact controls row ── */
+.econ-cal-controls-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 8px 0;
+}
+.cal-range-btns { display: flex; gap: 4px; }
+.cal-range-btn {
+  background: var(--card); border: 1px solid var(--border); color: var(--text-dim);
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  cursor: pointer; font-family: inherit; transition: all .15s;
+}
+.cal-range-btn.active { background: rgba(88,166,255,.15); border-color: var(--blue); color: var(--blue); }
+.cal-range-btn:hover { border-color: var(--blue); color: var(--blue); }
+.cal-search-input-compact { max-width: 200px; font-size: 12px; padding: 5px 10px; }
+.econ-cal-table td { font-size: 12px; padding: 5px 10px; }
+.econ-cal-table th { font-size: 10px; }
+
+/* ── Screener length row ── */
+.screener-length-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 0;
+}
+.screener-len-btn {
+  background: var(--card); border: 1px solid var(--border); color: var(--text-dim);
+  padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  cursor: pointer; font-family: inherit; transition: all .15s;
+}
+.screener-len-btn.active { background: rgba(88,166,255,.15); border-color: var(--blue); color: var(--blue); }
+.screener-len-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ── Sector popup enlarged ── */
+.sector-news-popup { width: 560px !important; }
+
+/* ── Crypto News View item layout ── */
+.news-item-title { font-size: 13px; font-weight: 600; line-height: 1.45; margin: 4px 0 2px; }
+.news-item-title a { color: var(--text); text-decoration: none; }
+.news-item-title a:hover { color: var(--blue); }
+.news-item-time { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.crypto-news-card-source { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }

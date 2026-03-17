@@ -11,7 +11,7 @@
 
 <!-- ─── SIDEBAR ─────────────────────────────────────────────────── -->
 <nav class="sidebar">
-  <div class="sidebar-logo">
+  <div class="sidebar-logo" onclick="navigate('dashboard')" style="cursor:pointer" title="Go to Stock Dashboard">
     <img src="Logo1.jpg" alt="Stock & Crypto Super Tracker" class="logo-img" onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex'" />
     <div id="logo-fallback" style="display:none;align-items:center;gap:8px">
       <span class="logo-icon">📈</span>
@@ -49,6 +49,9 @@
     <div class="nav-group open">
       <li class="nav-item" data-view="crypto" onclick="navigate('crypto')">
         <span class="nav-icon">₿</span> Crypto Dashboard
+      </li>
+      <li class="nav-item" data-view="crypto-news" onclick="navigate('crypto-news')">
+        <span class="nav-icon">📰</span> Crypto News
       </li>
     </div>
     <!-- Tools Group -->
@@ -227,24 +230,20 @@
     </div>
     <!-- Economic Calendar Tab -->
     <div id="econ-cal-tab" class="cal-tab-content">
-      <div class="econ-cal-controls">
-        <div class="cal-impact-filters">
-          <span class="cal-filter-label">Impact:</span>
-          <label class="cal-filter-check"><input type="checkbox" id="econ-impact-high" checked onchange="renderEconCalendar()"><span class="cal-chip high">🔴 High</span></label>
-          <label class="cal-filter-check"><input type="checkbox" id="econ-impact-medium" checked onchange="renderEconCalendar()"><span class="cal-chip medium">🟡 Medium</span></label>
-          <label class="cal-filter-check"><input type="checkbox" id="econ-impact-low" onchange="renderEconCalendar()"><span class="cal-chip low">🟢 Low</span></label>
+      <div class="econ-cal-controls-row">
+        <!-- Range quick-select -->
+        <div class="cal-range-btns" id="cal-range-btns">
+          <button class="cal-range-btn active" data-range="1w" onclick="setEconCalRange('1w')">1W</button>
+          <button class="cal-range-btn" data-range="1m" onclick="setEconCalRange('1m')">1M</button>
+          <button class="cal-range-btn" data-range="1q" onclick="setEconCalRange('1q')">1Q</button>
+          <button class="cal-range-btn" data-range="1y" onclick="setEconCalRange('1y')">1Y</button>
         </div>
-        <div class="cal-impact-filters">
-          <span class="cal-filter-label">Country:</span>
-          <label class="cal-filter-check"><input type="checkbox" id="econ-country-usd" checked onchange="renderEconCalendar()"><span class="cal-chip">🇺🇸 USD</span></label>
-          <label class="cal-filter-check"><input type="checkbox" id="econ-country-eur" onchange="renderEconCalendar()"><span class="cal-chip">🇪🇺 EUR</span></label>
-          <label class="cal-filter-check"><input type="checkbox" id="econ-country-gbp" onchange="renderEconCalendar()"><span class="cal-chip">🇬🇧 GBP</span></label>
-          <label class="cal-filter-check"><input type="checkbox" id="econ-country-jpy" onchange="renderEconCalendar()"><span class="cal-chip">🇯🇵 JPY</span></label>
-          <label class="cal-filter-check"><input type="checkbox" id="econ-country-all" onchange="renderEconCalendar()"><span class="cal-chip">🌍 All</span></label>
-        </div>
-        <div class="cal-search-wrap">
-          <input type="text" id="econ-search-input" class="form-input cal-search-input" placeholder="🔍 Search events (e.g. CPI, GDP, Fed, NFP)…" oninput="renderEconCalendar()" />
-        </div>
+        <!-- Impact filters inline -->
+        <label class="cal-filter-check"><input type="checkbox" id="econ-impact-high" checked onchange="renderEconCalendar()"><span class="cal-chip high">🔴 High</span></label>
+        <label class="cal-filter-check"><input type="checkbox" id="econ-impact-medium" checked onchange="renderEconCalendar()"><span class="cal-chip medium">🟡 Med</span></label>
+        <label class="cal-filter-check"><input type="checkbox" id="econ-impact-low" onchange="renderEconCalendar()"><span class="cal-chip low">🟢 Low</span></label>
+        <!-- Search -->
+        <input type="text" id="econ-search-input" class="form-input cal-search-input-compact" placeholder="🔍 Search events…" oninput="renderEconCalendar()" />
       </div>
       <div id="econ-cal-table" class="econ-cal-table-wrap"></div>
     </div>
@@ -282,7 +281,7 @@
       </select>
       <select class="screener-select" id="screener-column" onchange="initTVScreener()">
         <option value="overview">📊 Overview</option>
-        <option value="performance">📈 Performance</option>
+        <option value="performance" selected>📈 Performance</option>
         <option value="valuation">💲 Valuation</option>
         <option value="dividends">💰 Dividends</option>
         <option value="technical_analysis">📉 Technicals</option>
@@ -299,6 +298,13 @@
         <option value="new_lows">52W Lows</option>
         <option value="high_dividend">High Dividend</option>
       </select>
+    </div>
+    <div class="screener-length-row">
+      <span style="font-size:11px;color:var(--text-dim);font-weight:600">SHOW</span>
+      <button class="screener-len-btn" data-len="25" onclick="setScreenerLength(25)">Top 25</button>
+      <button class="screener-len-btn active" data-len="50" onclick="setScreenerLength(50)">Top 50</button>
+      <button class="screener-len-btn" data-len="100" onclick="setScreenerLength(100)">Top 100</button>
+      <button class="screener-len-btn" data-len="500" onclick="setScreenerLength(500)">Top 500</button>
     </div>
     <div class="tv-widget-container" id="tv-screener-container"></div>
   </section>
@@ -378,6 +384,10 @@
       </div>
       <div id="crypto-news-section" class="crypto-news-grid-inner"></div>
     </div>
+  </section>
+
+  <!-- CRYPTO NEWS VIEW -->
+  <section id="crypto-news-view" class="view">
   </section>
 
   <!-- ALERTS VIEW -->
