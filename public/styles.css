@@ -1082,7 +1082,7 @@ html, body {
 }
 /* Stock table: #, stock, price, 1D, 7D, 1M, 3M, YTD, 1Y, 2Y, 3Y, cap, vol, chart */
 .lcw-stock .lcw-header {
-  grid-template-columns: 26px 82px 68px repeat(8, 44px) 64px 60px 150px;
+  grid-template-columns: 26px 82px 68px repeat(8, 52px) 64px 60px 150px;
 }
 
 .lcw-row {
@@ -1093,7 +1093,7 @@ html, body {
   font-size: 12px; transition: background .1s; cursor: pointer;
 }
 .lcw-stock .lcw-row {
-  grid-template-columns: 26px 82px 68px repeat(8, 44px) 64px 60px 150px;
+  grid-template-columns: 26px 82px 68px repeat(8, 52px) 64px 60px 150px;
   font-size: 11px;
 }
 .lcw-ath { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }

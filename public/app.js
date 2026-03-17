@@ -1049,9 +1049,9 @@ function buildStockDetailedRow(symbol, rank) {
       ${pctCell(perf['1Y'])}
       ${pctCell(perf['2Y'])}
       ${pctCell(perf['3Y'])}
-      <div class="lcw-col lcw-chart" id="stock-chart-${symbol}">${spark}</div>
       <div class="lcw-col lcw-mcap">${mcap}</div>
       <div class="lcw-col lcw-vol">${vol}</div>
+      <div class="lcw-col lcw-chart" id="stock-chart-${symbol}">${spark}</div>
       <div class="crypto-hover-popup" id="stock-tbl-hover-${symbol}"></div>
     </div>`;
 }
