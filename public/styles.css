@@ -1069,30 +1069,32 @@ html, body {
 
 /* ─── LIVECOINWATCH-STYLE TABLE (lcw-table) ──────────────────── */
 .lcw-table-scroll-wrap { width: 100%; overflow-x: auto; }
-.lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 1200px; }
+.lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 800px; }
+.lcw-crypto-table { min-width: 1140px; }
 
-/* Crypto table: #, ★icon, coin(fixed), price, ATH, ToATH, 1H, 24H, 7D, 30D, ~6M, YTD, 1Y, 2Y, 3Y, chart, mcap, vol */
+/* Crypto table: #, ★icon, coin, price, ATH, ToATH, 1H, 24H, 7D, 30D, 6M, YTD, 1Y, 2Y, 3Y, mcap, vol, chart */
 .lcw-header {
   display: grid;
-  grid-template-columns: 36px 44px 130px 90px 84px 56px repeat(9, 52px) 160px 80px 74px;
-  gap: 0; padding: 10px 12px; font-size: 10px; font-weight: 800;
+  grid-template-columns: 28px 32px 100px 80px 68px 50px repeat(9, 56px) 80px 68px 130px;
+  gap: 0; padding: 8px 10px; font-size: 10px; font-weight: 800;
   color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px;
   background: var(--card); border-bottom: 2px solid var(--border);
 }
-/* Stock table: #, stock, price, 1D, 7D, 1M, 3M, YTD, 1Y, 2Y, 3Y, chart, mcap, vol */
+/* Stock table: #, stock, price, 1D, 7D, 1M, 3M, YTD, 1Y, 2Y, 3Y, cap, vol, chart */
 .lcw-stock .lcw-header {
-  grid-template-columns: 36px 100px 76px repeat(8, 52px) 1fr 78px 70px;
+  grid-template-columns: 26px 82px 68px repeat(8, 44px) 64px 60px 150px;
 }
 
 .lcw-row {
   display: grid;
-  grid-template-columns: 36px 44px 130px 90px 84px 56px repeat(9, 52px) 160px 80px 74px;
-  gap: 0; padding: 7px 12px; align-items: center;
+  grid-template-columns: 28px 32px 100px 80px 68px 50px repeat(9, 56px) 80px 68px 130px;
+  gap: 0; padding: 6px 10px; align-items: center;
   border-bottom: 1px solid #1c2128; background: var(--surface);
   font-size: 12px; transition: background .1s; cursor: pointer;
 }
 .lcw-stock .lcw-row {
-  grid-template-columns: 36px 100px 76px repeat(8, 52px) 1fr 78px 70px;
+  grid-template-columns: 26px 82px 68px repeat(8, 44px) 64px 60px 150px;
+  font-size: 11px;
 }
 .lcw-ath { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
 .lcw-row:hover { background: #1c2128; }
@@ -1728,18 +1730,18 @@ html, body {
 .maps-view-fullscreen { flex-direction: column; }
 .maps-view-fullscreen.active { display: flex; }
 .maps-header {
-  display: flex; align-items: center; gap: 16px;
-  padding: 10px 16px 8px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 16px 5px; flex-wrap: nowrap;
   border-bottom: 1px solid var(--border); margin-bottom: 0;
 }
-.maps-header .view-title { margin: 0; font-size: 18px; white-space: nowrap; }
-.maps-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1; }
+.maps-header .view-title { margin: 0; font-size: 16px; white-space: nowrap; }
+.maps-controls { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; flex: 1; overflow: hidden; }
 .maps-source-wrap { position: relative; }
 .maps-source-btn {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 5px;
   background: var(--card); border: 1px solid var(--border);
-  color: var(--text); padding: 6px 12px; border-radius: 8px;
-  cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+  color: var(--text); padding: 4px 10px; border-radius: 7px;
+  cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit;
   transition: all .15s; white-space: nowrap;
 }
 .maps-source-btn:hover { border-color: var(--blue); color: var(--blue); }
@@ -1768,16 +1770,16 @@ html, body {
 .maps-group-tabs { display: flex; gap: 4px; }
 .maps-group-btn {
   background: transparent; border: 1px solid var(--border);
-  color: var(--text-dim); padding: 6px 12px; border-radius: 7px;
-  cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit;
+  color: var(--text-dim); padding: 4px 9px; border-radius: 6px;
+  cursor: pointer; font-size: 11px; font-weight: 600; font-family: inherit;
   transition: all .15s;
 }
 .maps-group-btn:hover { border-color: var(--blue); color: var(--blue); }
 .maps-group-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
 .maps-metric-select {
   background: var(--card); border: 1px solid var(--border);
-  color: var(--text); padding: 6px 10px; border-radius: 7px;
-  font-size: 12px; font-family: inherit; cursor: pointer;
+  color: var(--text); padding: 4px 8px; border-radius: 6px;
+  font-size: 11px; font-family: inherit; cursor: pointer;
 }
 .maps-widget-container {
   flex: 1; min-height: 500px;
@@ -1787,10 +1789,10 @@ html, body {
 
 /* ── Market Screener Controls ── */
 .screener-header-row {
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 10px 16px 8px; border-bottom: 1px solid var(--border); margin-bottom: 0;
+  display: flex; align-items: center; gap: 12px; flex-wrap: nowrap;
+  padding: 7px 16px 5px; border-bottom: 1px solid var(--border); margin-bottom: 0;
 }
-.screener-header-row .view-title { margin: 0; font-size: 18px; white-space: nowrap; }
+.screener-header-row .view-title { margin: 0; font-size: 16px; white-space: nowrap; }
 .screener-search-inline {
   display: flex; align-items: center; gap: 8px; flex: 1;
 }
@@ -1798,14 +1800,14 @@ html, body {
   flex: 1; max-width: 320px; font-size: 13px; padding: 6px 12px;
 }
 .screener-controls {
-  display: flex; gap: 8px; flex-wrap: wrap;
-  padding: 8px 16px; margin-bottom: 0;
+  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+  padding: 6px 16px; margin-bottom: 0; border-bottom: 1px solid var(--border);
 }
 .screener-select {
   background: var(--card); border: 1px solid var(--border);
-  color: var(--text); padding: 6px 10px; border-radius: 7px;
+  color: var(--text); padding: 4px 8px; border-radius: 6px;
   font-size: 12px; font-family: inherit; cursor: pointer;
-  min-width: 140px;
+  min-width: 130px;
 }
 
 /* ── Calendar Legend & Period Tabs ── */
@@ -2077,9 +2079,15 @@ html, body {
 /* Calendar view-header more compact */
 #calendar-view .view-header { margin-bottom: 6px; padding-bottom: 6px; }
 
-/* ── Screener length row ── */
+/* ── Screener length row (merged into .screener-controls) ── */
 .screener-length-row {
-  display: flex; align-items: center; gap: 8px; padding: 8px 0;
+  display: none; /* merged into screener-controls */
+}
+.screener-ctrl-sep {
+  width: 1px; height: 18px; background: var(--border); margin: 0 4px; flex-shrink: 0;
+}
+.screener-show-label {
+  font-size: 10px; font-weight: 700; color: var(--text-dim); white-space: nowrap; text-transform: uppercase; letter-spacing: .05em;
 }
 .screener-len-btn {
   background: var(--card); border: 1px solid var(--border); color: var(--text-dim);

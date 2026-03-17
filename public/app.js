@@ -986,7 +986,7 @@ function calc52wPct(price, low, high) {
 
 /* ─── STOCK DETAILED TABLE (Dashboard 3 — livecoinwatch style) ── */
 function buildStockDetailedTable(symbols) {
-  const period = state.stockChartPeriod || '1mo';
+  const period = state.stockChartPeriod || 'ytd';
   const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y']].map(([p, label]) =>
     `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="event.stopPropagation();setStockChartPeriod('${p}')">${label}</button>`
   ).join('');
@@ -1004,9 +1004,9 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
-        <div class="lcw-col lcw-chart">Chart <span class="chart-period-toggle">${periodBtns}</span></div>
-        <div class="lcw-col lcw-mcap">Mkt Cap</div>
-        <div class="lcw-col lcw-vol">Volume</div>
+        <div class="lcw-col lcw-mcap">Cap</div>
+        <div class="lcw-col lcw-vol">Vol</div>
+        <div class="lcw-col lcw-chart"><span class="chart-period-toggle">${periodBtns}</span></div>
       </div>
       ${symbols.map((sym, i) => buildStockDetailedRow(sym, i + 1)).join('')}
     </div>`;
@@ -2924,8 +2924,6 @@ async function renderLatestNews() {
       </div>
     </div>
 
-    ${buildXSection()}
-
     <!-- Customize panel (hidden) -->
     <div id="news-customize-panel" class="news-customize-panel" style="display:none">
       <div class="news-cust-title">📌 Follow Additional Stocks for News</div>
@@ -3170,11 +3168,12 @@ function renderNewsItems() {
     const cats = n.categories || [];
     const breaking = cats.includes('breaking'), portfolio = cats.includes('portfolio');
     const newsKey = (n.title || '').slice(0, 30);
-    recordNewsClick; // no-op reference to keep fn available
+    // Safe cats serialization: use single-quoted array to avoid breaking HTML attributes
+    const catsAttr = cats.length ? `['${cats.join("','")}']` : '[]';
 
     return `<div class="nl-item${breaking ? ' nl-breaking' : portfolio ? ' nl-portfolio' : ''}">
       <span class="nl-src ${srcClass}">${srcDisplay}</span>${freshDot}${n.relatedSymbol ? `<button class="news-sym-pill" onclick="showNewsModal('${n.relatedSymbol}')">${n.relatedSymbol}</button>` : ''}
-      <a class="nl-title" href="${n.link}" target="_blank" rel="noopener" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${JSON.stringify(cats)})">${n.title}</a>
+      <a class="nl-title" href="${n.link}" target="_blank" rel="noopener" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${catsAttr})">${n.title}</a>
       <span class="nl-time">${timeStr}</span>
     </div>`;
   }).join('');
@@ -3663,9 +3662,9 @@ function buildCryptoDetailedTable(coins) {
         ${fmtPctCell(c.change1y)}
         <div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}">${c.change2y != null ? `${c.change2y >= 0 ? '+' : ''}${c.change2y.toFixed(2)}%` : '—'}</div>
         <div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}">${c.change3y != null ? `${c.change3y >= 0 ? '+' : ''}${c.change3y.toFixed(2)}%` : '—'}</div>
-        <div class="lcw-col lcw-chart" id="crypto-chart-${c.id}">${sparkSvg}</div>
         <div class="lcw-col lcw-mcap">${mcap}</div>
         <div class="lcw-col lcw-vol">${vol}</div>
+        <div class="lcw-col lcw-chart" id="crypto-chart-${c.id}">${sparkSvg}</div>
         ${popup}
       </div>`;
   }).join('');
@@ -3683,19 +3682,19 @@ function buildCryptoDetailedTable(coins) {
         <div class="lcw-col lcw-coin">Coin</div>
         <div class="lcw-col lcw-price">Price</div>
         <div class="lcw-col lcw-ath">ATH</div>
-        <div class="lcw-col lcw-pct">To ATH</div>
+        <div class="lcw-col lcw-pct">↑ATH</div>
         <div class="lcw-col lcw-pct">1H</div>
         <div class="lcw-col lcw-pct">24H</div>
         <div class="lcw-col lcw-pct">7D</div>
         <div class="lcw-col lcw-pct">30D</div>
-        <div class="lcw-col lcw-pct">~6M</div>
+        <div class="lcw-col lcw-pct">6M</div>
         <div class="lcw-col lcw-pct">YTD</div>
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
-        <div class="lcw-col lcw-chart">Chart <span class="chart-period-toggle">${periodBtns}</span></div>
         <div class="lcw-col lcw-mcap">Mkt Cap</div>
         <div class="lcw-col lcw-vol">Volume</div>
+        <div class="lcw-col lcw-chart"><span class="chart-period-toggle">${periodBtns}</span></div>
       </div>
       ${rows}
     </div>

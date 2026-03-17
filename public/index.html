@@ -270,7 +270,7 @@
         <button class="btn-secondary" onclick="screenerSearchSymbol()">Go</button>
       </div>
     </div>
-    <!-- Compact filter row -->
+    <!-- Compact filter row: selects + SHOW buttons all on one line -->
     <div class="screener-controls">
       <select class="screener-select" id="screener-market" onchange="initTVScreener()">
         <option value="america">🇺🇸 US Stocks</option>
@@ -298,13 +298,12 @@
         <option value="new_lows">52W Lows</option>
         <option value="high_dividend">High Dividend</option>
       </select>
-    </div>
-    <div class="screener-length-row">
-      <span style="font-size:11px;color:var(--text-dim);font-weight:600">SHOW</span>
-      <button class="screener-len-btn" data-len="25" onclick="setScreenerLength(25)">Top 25</button>
-      <button class="screener-len-btn active" data-len="50" onclick="setScreenerLength(50)">Top 50</button>
-      <button class="screener-len-btn" data-len="100" onclick="setScreenerLength(100)">Top 100</button>
-      <button class="screener-len-btn" data-len="500" onclick="setScreenerLength(500)">Top 500</button>
+      <div class="screener-ctrl-sep"></div>
+      <span class="screener-show-label">Show</span>
+      <button class="screener-len-btn" data-len="25" onclick="setScreenerLength(25)">25</button>
+      <button class="screener-len-btn active" data-len="50" onclick="setScreenerLength(50)">50</button>
+      <button class="screener-len-btn" data-len="100" onclick="setScreenerLength(100)">100</button>
+      <button class="screener-len-btn" data-len="500" onclick="setScreenerLength(500)">500</button>
     </div>
     <div class="tv-widget-container" id="tv-screener-container"></div>
   </section>
