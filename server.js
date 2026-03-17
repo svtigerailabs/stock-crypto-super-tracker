@@ -906,39 +906,59 @@ async function fetchXNews(handles) {
 }
 
 async function fetchRSSNews() {
-  if (rssCache.data && (Date.now() - rssCache.fetchedAt) < RSS_CACHE_TTL) return rssCache.data;
+  // Return fresh cache if still valid
+  if (rssCache.data?.length && (Date.now() - rssCache.fetchedAt) < RSS_CACHE_TTL) return rssCache.data;
 
   const feeds = [
-    // Most reliable first
+    // Google News RSS — most reliable, works from any server/IP
+    { url: 'https://news.google.com/rss/search?q=stock+market+finance&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=wall+street+investing&hl=en-US&gl=US&ceid=US:en', name: 'Google Finance' },
+    // Yahoo Finance
     { url: 'https://finance.yahoo.com/news/rssindex', name: 'Yahoo Finance' },
+    // Dow Jones / MarketWatch
     { url: 'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines', name: 'MarketWatch' },
+    { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', name: 'WSJ Markets' },
+    // CNBC
     { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', name: 'CNBC' },
     { url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664', name: 'CNBC Markets' },
-    { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', name: 'WSJ Markets' },
+    // Others
     { url: 'https://www.benzinga.com/feed', name: 'Benzinga' },
     { url: 'https://feeds.feedburner.com/thestreet/investing', name: 'TheStreet' },
     { url: 'https://www.fool.com/a/feeds/foolwatch', name: 'Motley Fool' },
     { url: 'https://feeds.reuters.com/reuters/businessNews', name: 'Reuters' },
     { url: 'https://feeds.bloomberg.com/markets/news.rss', name: 'Bloomberg' },
-    { url: 'https://www.ft.com/rss/home/uk', name: 'Financial Times' },
-    { url: 'https://seekingalpha.com/feed.xml', name: 'Seeking Alpha' },
   ];
 
   let allItems = [];
-  await Promise.allSettled(feeds.map(async feed => {
+  const results = await Promise.allSettled(feeds.map(async feed => {
     try {
       const res = await fetch(feed.url, { headers: YF_UA, signal: AbortSignal.timeout(8000) });
-      if (res.ok) { const xml = await res.text(); allItems.push(...parseRSS(xml, feed.name)); }
-    } catch (e) { console.warn(`RSS fetch failed for ${feed.name}:`, e.message); }
+      if (res.ok) {
+        const xml = await res.text();
+        const parsed = parseRSS(xml, feed.name);
+        if (parsed.length) allItems.push(...parsed);
+      }
+    } catch (e) { /* silent — will use stale cache if all fail */ }
   }));
 
-  // Deduplicate by title
+  // Deduplicate by title and sort newest first
   const seen = new Set();
   allItems = allItems.filter(a => { if (seen.has(a.title)) return false; seen.add(a.title); return true; });
   allItems.sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
-  rssCache.data = allItems.slice(0, 80); // keep up to 80 articles
-  rssCache.fetchedAt = Date.now();
-  return rssCache.data;
+  const fresh = allItems.slice(0, 80);
+
+  if (fresh.length > 0) {
+    // Only update cache when we actually got articles (never overwrite good cache with empty)
+    rssCache.data = fresh;
+    rssCache.fetchedAt = Date.now();
+    console.log(`RSS news: fetched ${fresh.length} articles`);
+  } else if (rssCache.data?.length) {
+    console.warn('RSS news: all feeds failed, returning stale cache (' + rssCache.data.length + ' articles)');
+  } else {
+    console.error('RSS news: all feeds failed and no stale cache available');
+  }
+
+  return rssCache.data || [];
 }
 
 // ── Aggregated latest news ──
@@ -1252,9 +1272,18 @@ async function fetchCryptoNews() {
   articles.sort((a, b) => (new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0)) || 0);
   const seen = new Set();
   const deduped = articles.filter(a => { if (seen.has(a.title)) return false; seen.add(a.title); return true; });
-  cryptoNewsCache.data = deduped.slice(0, 30);
-  cryptoNewsCache.at = Date.now();
-  return cryptoNewsCache.data;
+  const fresh = deduped.slice(0, 30);
+  if (fresh.length > 0) {
+    // Only update cache with non-empty results (never overwrite good cache with empty)
+    cryptoNewsCache.data = fresh;
+    cryptoNewsCache.at = Date.now();
+    console.log(`Crypto news: fetched ${fresh.length} articles`);
+  } else if (cryptoNewsCache.data?.length) {
+    console.warn('Crypto news: all sources failed, returning stale cache');
+  } else {
+    console.error('Crypto news: all sources failed and no stale cache available');
+  }
+  return cryptoNewsCache.data || [];
 }
 app.get('/api/crypto/news', async (req, res) => {
   try { res.json(await fetchCryptoNews()); }
@@ -1556,4 +1585,9 @@ server.listen(PORT, () => {
   console.log(`\n🚀 Stock Volatility Tracker → http://localhost:${PORT}\n`);
   restartCron();
   if (alerts.length > 0) setTimeout(checkAlerts, 2000);
+  // Pre-warm news caches so first client request never waits
+  setTimeout(() => {
+    Promise.allSettled([fetchRSSNews(), fetchCryptoNews()])
+      .then(() => console.log('📰 News caches pre-warmed'));
+  }, 3000);
 });

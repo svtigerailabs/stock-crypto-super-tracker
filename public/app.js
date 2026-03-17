@@ -495,8 +495,24 @@ async function fetchTickerHeadlines(type) {
     articles.sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
     tickerState[type].articles = articles.slice(0, 8); // show up to 8 headlines
     renderTickerMarquee(type);
+    // If still empty (all sources failed), retry in 30s, then 60s, then 120s
+    if (!tickerState[type].articles.length) {
+      const retries = (tickerState[type]._retryCount || 0);
+      if (retries < 4) {
+        tickerState[type]._retryCount = retries + 1;
+        setTimeout(() => fetchTickerHeadlines(type), Math.min(30 * 1000 * (retries + 1), 2 * 60 * 1000));
+      }
+    } else {
+      tickerState[type]._retryCount = 0; // reset on success
+    }
   } catch(e) {
-    renderTickerMarquee(type); // render fallback even on error
+    renderTickerMarquee(type); // render fallback (prices) even on error
+    // Retry on error
+    const retries = (tickerState[type]._retryCount || 0);
+    if (retries < 4) {
+      tickerState[type]._retryCount = retries + 1;
+      setTimeout(() => fetchTickerHeadlines(type), 30 * 1000);
+    }
   }
 }
 
@@ -525,7 +541,8 @@ function renderTickerMarquee(type) {
         </span>`).join('');
       if (items) { trackEl.innerHTML = items + items; _restartTickerAnim(trackEl); return; }
     }
-    trackEl.innerHTML = '<span class="ticker-loading">Loading headlines…</span>';
+    // Last resort: show a loading hint (prices fallback above should have caught this)
+    trackEl.innerHTML = '<span class="ticker-loading">Fetching headlines…</span>';
     return;
   }
 
@@ -558,9 +575,9 @@ function startTickerRotation(type) {
   const st = tickerState[type];
   if (st.timer) clearInterval(st.timer);
   st.timer = null; // CSS animation handles continuous scrolling
-  // Refresh headlines every 10 minutes
+  // Refresh headlines every 5 minutes
   if (st.refreshTimer) clearInterval(st.refreshTimer);
-  st.refreshTimer = setInterval(() => fetchTickerHeadlines(type), 10 * 60 * 1000);
+  st.refreshTimer = setInterval(() => fetchTickerHeadlines(type), 5 * 60 * 1000);
 }
 
 /* ─── INDEX MODAL (click on index bar) ────────────────────────── */
