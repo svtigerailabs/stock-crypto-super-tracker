@@ -28,14 +28,14 @@
     <li class="nav-item" data-view="maps" onclick="navigate('maps')">
       <span class="nav-icon">🗺️</span> Market Maps
     </li>
-    <li class="nav-item" data-view="calendar" onclick="navigate('calendar')">
-      <span class="nav-icon">📅</span> Market Calendar
-    </li>
     <li class="nav-item" data-view="screener" onclick="navigate('screener')">
       <span class="nav-icon">🔍</span> Market Screener
     </li>
     <li class="nav-item" data-view="tradingview" onclick="navigate('tradingview')">
       <span class="nav-icon">📉</span> TradingView
+    </li>
+    <li class="nav-item" data-view="calendar" onclick="navigate('calendar')">
+      <span class="nav-icon">📅</span> Market Calendar
     </li>
     <li class="nav-item" data-view="crypto" onclick="navigate('crypto')">
       <span class="nav-icon">₿</span> Crypto Dashboard
@@ -151,14 +151,56 @@
   </section>
 
   <!-- MARKET MAPS VIEW -->
-  <section id="maps-view" class="view">
-    <div class="view-header">
-      <div>
-        <h1 class="view-title">🗺️ Market Maps</h1>
-        <p class="view-subtitle">S&amp;P 500 heatmap by sector &amp; market cap — powered by TradingView</p>
+  <section id="maps-view" class="view maps-view-fullscreen">
+    <div class="view-header maps-header">
+      <h1 class="view-title">🗺️ Market Maps</h1>
+      <div class="maps-controls">
+        <!-- Source selector with categories -->
+        <div class="maps-source-wrap" id="maps-source-wrap">
+          <button class="maps-source-btn" onclick="toggleMapsSourceMenu(event)" id="maps-source-btn">
+            <span id="maps-source-label">S&P 500</span> <span class="maps-arrow">▼</span>
+          </button>
+          <div class="maps-source-menu" id="maps-source-menu">
+            <div class="maps-source-group-label">🇺🇸 US Indexes</div>
+            <button onclick="setMapsSource('SPX500','S&P 500')">S&amp;P 500</button>
+            <button onclick="setMapsSource('NASDAQ100','NASDAQ 100')">NASDAQ 100</button>
+            <button onclick="setMapsSource('DJ30','Dow Jones 30')">Dow Jones 30</button>
+            <button onclick="setMapsSource('RUSSELL2000','Russell 2000')">Russell 2000</button>
+            <div class="maps-source-group-label">🌍 Developed Markets</div>
+            <button onclick="setMapsSource('FTSE','FTSE 100 (UK)')">FTSE 100 (UK)</button>
+            <button onclick="setMapsSource('DAX','DAX (Germany)')">DAX (Germany)</button>
+            <button onclick="setMapsSource('CAC40','CAC 40 (France)')">CAC 40 (France)</button>
+            <button onclick="setMapsSource('NIKKEI225','Nikkei 225 (Japan)')">Nikkei 225 (Japan)</button>
+            <button onclick="setMapsSource('ASX200','ASX 200 (Australia)')">ASX 200 (Australia)</button>
+            <button onclick="setMapsSource('SMI','SMI (Switzerland)')">SMI (Switzerland)</button>
+            <button onclick="setMapsSource('STOXX600','STOXX 600 (Europe)')">STOXX 600 (Europe)</button>
+            <div class="maps-source-group-label">🌏 Emerging Markets</div>
+            <button onclick="setMapsSource('SSE','Shanghai (China)')">Shanghai (China)</button>
+            <button onclick="setMapsSource('SZSE','Shenzhen (China)')">Shenzhen (China)</button>
+            <button onclick="setMapsSource('NSE','NSE (India)')">NSE (India)</button>
+            <button onclick="setMapsSource('BOVESPA','BOVESPA (Brazil)')">BOVESPA (Brazil)</button>
+            <button onclick="setMapsSource('MOEX','MOEX (Russia)')">MOEX (Russia)</button>
+            <button onclick="setMapsSource('TADAWUL','Tadawul (Saudi)')">Tadawul (Saudi)</button>
+          </div>
+        </div>
+        <!-- Grouping toggle -->
+        <div class="maps-group-tabs">
+          <button class="maps-group-btn active" data-grouping="sector" onclick="setMapsGrouping('sector',this)">By Sector</button>
+          <button class="maps-group-btn" data-grouping="no_group" onclick="setMapsGrouping('no_group',this)">All Stocks</button>
+        </div>
+        <!-- Color metric -->
+        <select class="maps-metric-select" id="maps-metric" onchange="setMapsMetric(this.value)">
+          <option value="change">% Change</option>
+          <option value="change_from_open">From Open</option>
+          <option value="Perf.W">1W Change</option>
+          <option value="Perf.1M">1M Change</option>
+          <option value="Perf.3M">3M Change</option>
+          <option value="Perf.YTD">YTD Change</option>
+          <option value="Perf.Y">1Y Change</option>
+        </select>
       </div>
     </div>
-    <div class="tv-widget-container" id="tv-maps-container"></div>
+    <div class="tv-widget-container maps-widget-container" id="tv-maps-container"></div>
   </section>
 
   <!-- MARKET CALENDAR VIEW -->
@@ -196,46 +238,41 @@
 
   <!-- MARKET SCREENER VIEW -->
   <section id="screener-view" class="view">
-    <div class="view-header">
-      <div>
-        <h1 class="view-title">🔍 Market Screener</h1>
-        <p class="view-subtitle">Filter and discover US stocks by fundamentals &amp; technicals</p>
-      </div>
-    </div>
-    <!-- Quick filter bar -->
-    <div class="screener-controls">
-      <div class="screener-search-wrap">
-        <input type="text" id="screener-symbol-input" class="form-input screener-symbol-input" placeholder="🔍 Search symbol (e.g. TSLA, AAPL)…" onkeydown="if(event.key==='Enter')screenerSearchSymbol()" />
+    <div class="screener-header-row">
+      <h1 class="view-title">🔍 Market Screener</h1>
+      <div class="screener-search-inline">
+        <input type="text" id="screener-symbol-input" class="form-input" placeholder="🔍 Search symbol (e.g. TSLA, AAPL)…" onkeydown="if(event.key==='Enter')screenerSearchSymbol()" />
         <button class="btn-secondary" onclick="screenerSearchSymbol()">Go</button>
       </div>
-      <div class="screener-filters">
-        <select class="form-select screener-select" id="screener-market" onchange="initTVScreener()">
-          <option value="america">🇺🇸 US Stocks</option>
-          <option value="nasdaq">🔵 Nasdaq</option>
-          <option value="nyse">⚪ NYSE</option>
-          <option value="crypto">₿ Crypto</option>
-          <option value="forex">💱 Forex</option>
-        </select>
-        <select class="form-select screener-select" id="screener-column" onchange="initTVScreener()">
-          <option value="overview">📊 Overview</option>
-          <option value="performance">📈 Performance</option>
-          <option value="valuation">💲 Valuation</option>
-          <option value="dividends">💰 Dividends</option>
-          <option value="technical_analysis">📉 Technicals</option>
-        </select>
-        <select class="form-select screener-select" id="screener-screen" onchange="initTVScreener()">
-          <option value="general">All Stocks</option>
-          <option value="most_capitalized">Top Market Cap</option>
-          <option value="volume_leaders">Volume Leaders</option>
-          <option value="top_gainers">Top Gainers</option>
-          <option value="top_losers">Top Losers</option>
-          <option value="ath">All-Time Highs</option>
-          <option value="atl">All-Time Lows</option>
-          <option value="new_highs">52W Highs</option>
-          <option value="new_lows">52W Lows</option>
-          <option value="high_dividend">High Dividend</option>
-        </select>
-      </div>
+    </div>
+    <!-- Compact filter row -->
+    <div class="screener-controls">
+      <select class="screener-select" id="screener-market" onchange="initTVScreener()">
+        <option value="america">🇺🇸 US Stocks</option>
+        <option value="nasdaq">🔵 Nasdaq</option>
+        <option value="nyse">⚪ NYSE</option>
+        <option value="crypto">₿ Crypto</option>
+        <option value="forex">💱 Forex</option>
+      </select>
+      <select class="screener-select" id="screener-column" onchange="initTVScreener()">
+        <option value="overview">📊 Overview</option>
+        <option value="performance">📈 Performance</option>
+        <option value="valuation">💲 Valuation</option>
+        <option value="dividends">💰 Dividends</option>
+        <option value="technical_analysis">📉 Technicals</option>
+      </select>
+      <select class="screener-select" id="screener-screen" onchange="initTVScreener()">
+        <option value="general">All Stocks</option>
+        <option value="most_capitalized">Top Market Cap</option>
+        <option value="volume_leaders">Volume Leaders</option>
+        <option value="top_gainers">Top Gainers</option>
+        <option value="top_losers">Top Losers</option>
+        <option value="ath">All-Time Highs</option>
+        <option value="atl">All-Time Lows</option>
+        <option value="new_highs">52W Highs</option>
+        <option value="new_lows">52W Lows</option>
+        <option value="high_dividend">High Dividend</option>
+      </select>
     </div>
     <div class="tv-widget-container" id="tv-screener-container"></div>
   </section>

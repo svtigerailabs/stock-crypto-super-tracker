@@ -4091,25 +4091,75 @@ function _injectTVWidget(containerId, widgetName, config) {
   container.appendChild(script);
 }
 
+/* ── Maps state ── */
+let _mapsSource = 'SPX500';
+let _mapsSourceLabel = 'S&P 500';
+let _mapsGrouping = 'sector';
+let _mapsMetric = 'change';
+
 function initTVMaps() {
+  // Always re-render with current params (clear initialized flag)
+  const container = document.getElementById('tv-maps-container');
+  if (container) {
+    container.dataset.initialized = '';
+    container.innerHTML = '';
+  }
+  const h = Math.max(500, window.innerHeight - 130);
   _injectTVWidget('tv-maps-container', 'stock-heatmap', {
     exchanges: [],
-    dataSource: 'SPX500',
-    grouping: 'sector',
+    dataSource: _mapsSource,
+    grouping: _mapsGrouping,
     blockSize: 'market_cap_basic',
-    blockColor: 'change',
+    blockColor: _mapsMetric,
     locale: 'en',
     symbolUrl: '',
     colorTheme: 'dark',
-    hasTopBar: true,
-    isDataSetEnabled: true,
+    hasTopBar: false,
+    isDataSetEnabled: false,
     isZoomEnabled: true,
     hasSymbolTooltip: true,
     isMonoSize: false,
     width: '100%',
-    height: 650,
+    height: h,
   });
 }
+
+function setMapsSource(source, label) {
+  _mapsSource = source;
+  _mapsSourceLabel = label;
+  const lbl = document.getElementById('maps-source-label');
+  if (lbl) lbl.textContent = label;
+  const menu = document.getElementById('maps-source-menu');
+  if (menu) menu.classList.remove('open');
+  initTVMaps();
+}
+
+function setMapsGrouping(grouping, btn) {
+  _mapsGrouping = grouping;
+  document.querySelectorAll('.maps-group-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  initTVMaps();
+}
+
+function setMapsMetric(metric) {
+  _mapsMetric = metric;
+  initTVMaps();
+}
+
+function toggleMapsSourceMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('maps-source-menu');
+  if (menu) menu.classList.toggle('open');
+}
+
+// Close maps dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('maps-source-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const menu = document.getElementById('maps-source-menu');
+    if (menu) menu.classList.remove('open');
+  }
+});
 
 let _calPeriod = 'week';
 function setCalendarPeriod(range) {

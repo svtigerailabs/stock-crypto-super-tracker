@@ -1720,21 +1720,87 @@ html, body {
 }
 .tv-quick-btn:hover { background: rgba(88,166,255,.12); color: var(--blue); border-color: var(--blue); }
 
+/* ── Market Maps ── */
+.maps-view-fullscreen { display: flex; flex-direction: column; }
+.maps-header {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px 8px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); margin-bottom: 0;
+}
+.maps-header .view-title { margin: 0; font-size: 18px; white-space: nowrap; }
+.maps-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1; }
+.maps-source-wrap { position: relative; }
+.maps-source-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 12px; border-radius: 8px;
+  cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+  transition: all .15s; white-space: nowrap;
+}
+.maps-source-btn:hover { border-color: var(--blue); color: var(--blue); }
+.maps-arrow { font-size: 10px; color: var(--text-dim); }
+.maps-source-menu {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  min-width: 200px; z-index: 999; padding: 6px;
+  max-height: 360px; overflow-y: auto;
+}
+.maps-source-menu.open { display: block; }
+.maps-source-group-label {
+  font-size: 10px; font-weight: 700; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 8px 8px 4px; margin-top: 4px;
+}
+.maps-source-group-label:first-child { margin-top: 0; }
+.maps-source-menu button {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; color: var(--text);
+  padding: 7px 12px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; font-family: inherit; transition: background .12s;
+}
+.maps-source-menu button:hover { background: rgba(88,166,255,.12); color: var(--blue); }
+.maps-group-tabs { display: flex; gap: 4px; }
+.maps-group-btn {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-dim); padding: 6px 12px; border-radius: 7px;
+  cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit;
+  transition: all .15s;
+}
+.maps-group-btn:hover { border-color: var(--blue); color: var(--blue); }
+.maps-group-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+.maps-metric-select {
+  background: var(--card); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 10px; border-radius: 7px;
+  font-size: 12px; font-family: inherit; cursor: pointer;
+}
+.maps-widget-container {
+  flex: 1; min-height: 500px;
+  display: flex; flex-direction: column;
+}
+.maps-widget-container iframe { border: none; }
+
 /* ── Market Screener Controls ── */
+.screener-header-row {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 10px 16px 8px; border-bottom: 1px solid var(--border); margin-bottom: 0;
+}
+.screener-header-row .view-title { margin: 0; font-size: 18px; white-space: nowrap; }
+.screener-search-inline {
+  display: flex; align-items: center; gap: 8px; flex: 1;
+}
+.screener-search-inline .form-input {
+  flex: 1; max-width: 320px; font-size: 13px; padding: 6px 12px;
+}
 .screener-controls {
-  display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;
-}
-.screener-search-wrap {
-  display: flex; align-items: center; gap: 10px;
-}
-.screener-symbol-input {
-  flex: 1; max-width: 380px; font-size: 13px; padding: 8px 12px;
-}
-.screener-filters {
   display: flex; gap: 8px; flex-wrap: wrap;
+  padding: 8px 16px; margin-bottom: 0;
 }
 .screener-select {
-  min-width: 150px; font-size: 12px; padding: 6px 10px;
+  background: var(--card); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 10px; border-radius: 7px;
+  font-size: 12px; font-family: inherit; cursor: pointer;
+  min-width: 140px;
 }
 
 /* ── Calendar Legend & Period Tabs ── */
