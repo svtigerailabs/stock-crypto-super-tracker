@@ -770,7 +770,7 @@ html, body {
 .view-toggle-btn.active { background: var(--blue-dim); color: #fff; }
 
 /* ─── LIST VIEW ──────────────────────────────────────────────── */
-.stocks-list { display: flex; flex-direction: column; gap: 0; overflow-x: auto; }
+.stocks-list { display: flex; flex-direction: column; gap: 0; overflow-x: visible; }
 .stocks-list-header {
   display: grid; grid-template-columns: 60px 2fr 1fr 1fr 1fr 1fr 1fr;
   gap: 8px; padding: 8px 14px; font-size: 10px; font-weight: 700;
@@ -979,7 +979,7 @@ html, body {
 }
 
 /* ─── CHART PERIOD TOGGLE ────────────────────────────────────── */
-.chart-period-toggle { display: inline-flex; gap: 2px; margin-left: 6px; }
+.chart-period-toggle { display: inline-flex; gap: 2px; flex-wrap: nowrap; }
 .chart-period-btn {
   font-size: 9px; padding: 1px 5px; border-radius: 3px; cursor: pointer;
   border: 1px solid var(--border); background: transparent;
@@ -1075,6 +1075,8 @@ html, body {
 .lcw-table-scroll-wrap::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 .lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 800px; }
 .lcw-crypto-table { min-width: 1140px; }
+/* Stock table total: 32+110+82+(8×54)+84+76+260 = 1076px */
+.lcw-stock { min-width: 1080px; }
 
 /* Crypto table: #, ★icon, coin, price, ATH, ToATH, 1H, 24H, 7D, 30D, 6M, YTD, 1Y, 2Y, 3Y, mcap, vol, chart */
 .lcw-header {
@@ -1086,7 +1088,7 @@ html, body {
 }
 /* Stock table: #, stock, price, 1D, 7D, 1M, 3M, YTD, 1Y, 2Y, 3Y, cap, vol, chart */
 .lcw-stock .lcw-header {
-  grid-template-columns: 26px 82px 68px repeat(8, 52px) 64px 60px 150px;
+  grid-template-columns: 32px 110px 82px repeat(8, 54px) 84px 76px 260px;
 }
 
 .lcw-row {
@@ -1097,7 +1099,7 @@ html, body {
   font-size: 12px; transition: background .1s; cursor: pointer;
 }
 .lcw-stock .lcw-row {
-  grid-template-columns: 26px 82px 68px repeat(8, 52px) 64px 60px 150px;
+  grid-template-columns: 32px 110px 82px repeat(8, 54px) 84px 76px 260px;
   font-size: 11px;
 }
 .lcw-ath { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }

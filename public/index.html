@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock & Crypto Super Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=7" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
 </head>
 <body>
@@ -99,6 +99,13 @@
           <button class="view-toggle-btn active" data-mode="grid" onclick="switchDashView('grid')" title="Compact Grid">⊞</button>
           <button class="view-toggle-btn" data-mode="cards" onclick="switchDashView('cards')" title="Card View with Charts">📊</button>
           <button class="view-toggle-btn" data-mode="detailed" onclick="switchDashView('detailed')" title="Detailed Table">📋</button>
+        </div>
+        <!-- Zoom controls: only visible in detailed table mode -->
+        <div class="crypto-zoom-controls" id="stock-zoom-controls" style="display:none">
+          <button class="crypto-zoom-btn" onclick="adjustStockZoom(-0.1)" title="Zoom Out">−</button>
+          <span class="crypto-zoom-label" id="stock-zoom-label">100%</span>
+          <button class="crypto-zoom-btn" onclick="adjustStockZoom(0.1)" title="Zoom In">＋</button>
+          <button class="crypto-zoom-btn" onclick="_stockTableZoom=1.0;adjustStockZoom(0)" title="Reset Zoom">⊙</button>
         </div>
         <button class="btn-sm-edit" id="edit-mode-btn" onclick="toggleEditMode()">✏️ Edit</button>
         <button class="btn-sm-edit" onclick="showSaveProfileModal()" title="Save current watchlist as a profile">💾 Save Profile</button>
@@ -663,6 +670,6 @@
 <div id="toast-container" class="toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

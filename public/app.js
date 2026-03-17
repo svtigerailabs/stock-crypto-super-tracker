@@ -909,6 +909,9 @@ function renderDashboard() {
   }
 
   const mode = state.dashViewMode === 'list' ? 'grid' : state.dashViewMode; // list view removed
+  // Show/hide stock zoom controls based on view mode
+  const stockZoomCtrl = document.getElementById('stock-zoom-controls');
+  if (stockZoomCtrl) stockZoomCtrl.style.display = mode === 'detailed' ? 'flex' : 'none';
   if (mode === 'cards') {
     grid.className = 'stocks-grid stocks-grid-cards';
     grid.innerHTML = symbols.map(sym => buildStockCardRich(sym)).join('');
@@ -917,6 +920,7 @@ function renderDashboard() {
     grid.className = 'stocks-list';
     grid.innerHTML = buildStockDetailedTable(symbols);
     symbols.forEach(sym => loadStockPerfForTable(sym));
+    setTimeout(() => adjustStockZoom(0), 80);
   } else {
     grid.className = 'stocks-grid';
     grid.innerHTML = symbols.map(sym => buildStockCard(sym)).join('');
@@ -1002,6 +1006,7 @@ function buildStockDetailedTable(symbols) {
     `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="event.stopPropagation();setStockChartPeriod('${p}')">${label}</button>`
   ).join('');
   return `
+    <div class="lcw-table-scroll-wrap">
     <div class="lcw-table lcw-stock">
       <div class="lcw-header">
         <div class="lcw-col lcw-rank">#</div>
@@ -1020,6 +1025,7 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-chart"><span class="chart-period-toggle">${periodBtns}</span></div>
       </div>
       ${symbols.map((sym, i) => buildStockDetailedRow(sym, i + 1)).join('')}
+    </div>
     </div>`;
 }
 
@@ -3269,6 +3275,18 @@ async function loadDashboardNews() {
       dashNewsLoaded = true;
       loadDashboardNews();
     }
+  }
+}
+
+/* ─── STOCK TABLE ZOOM ───────────────────────────────────────── */
+let _stockTableZoom = 1.0;
+function adjustStockZoom(delta) {
+  _stockTableZoom = Math.max(0.65, Math.min(1.25, parseFloat((_stockTableZoom + delta).toFixed(2))));
+  const table = document.querySelector('.lcw-stock');
+  if (table) {
+    table.style.zoom = _stockTableZoom;
+    const label = document.getElementById('stock-zoom-label');
+    if (label) label.textContent = Math.round(_stockTableZoom * 100) + '%';
   }
 }
 
