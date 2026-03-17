@@ -452,9 +452,11 @@ async function loadMarketIndex() {
     const data = await api('GET', '/market-index');
     marketIndexData = data;
     renderMarketIndexBar();
-    // Re-render stock ticker with market index data if headlines not loaded yet
-    if (!tickerState.stock.articles.length) renderTickerMarquee('stock');
-  } catch (e) { /* silent */ }
+    // Always re-render ticker now that market prices are available
+    renderTickerMarquee('stock');
+  } catch (e) {
+    renderTickerMarquee('stock'); // render with whatever we have
+  }
 }
 
 function renderMarketIndexBar() {
@@ -603,31 +605,41 @@ function renderTickerMarquee(type) {
   const trackEl = document.getElementById(`${type}-ticker-track`);
   if (!trackEl) return;
 
-  // Build price prefix — always show market/crypto prices in ticker (never empty)
-  let pricePrefix = '';
-  if (type === 'stock') {
-    pricePrefix = _buildMarketIndexTickerItems();
-    // If market index not loaded yet, use portfolio prices
-    if (!pricePrefix && Object.keys(state.stocks).length) {
-      pricePrefix = Object.entries(state.stocks).slice(0, 8).map(([sym, s]) => {
-        const chg = s.changePercent;
-        return `<span class="ticker-item">` +
-          `<span class="ticker-title">${sym}</span>` +
-          `<span class="ticker-meta" style="color:${(chg||0)>=0?'var(--green)':'var(--red)'}">${s.price?'$'+s.price.toFixed(2):''} ${chg!=null?`(${chg>=0?'+':''}${chg.toFixed(2)}%)`:''}</span>` +
-          `<span class="ticker-sep">◆</span></span>`;
-      }).join('');
+  // ── CRYPTO TICKER: headlines only, no coin prices, top 3 ──────
+  if (type === 'crypto') {
+    if (!articles.length) {
+      trackEl.innerHTML = '<span class="ticker-loading">Loading crypto headlines…</span>';
+      return;
     }
-  } else if (type === 'crypto' && state.cryptoData?.length) {
-    pricePrefix = state.cryptoData.slice(0, 8).map(c =>
-      `<span class="ticker-item">` +
-      `<span class="ticker-title">${c.symbol}</span>` +
-      `<span class="ticker-meta" style="color:${(c.change24h||0)>=0?'var(--green)':'var(--red)'}">${cryptoPriceFmt(c.price)} ${c.change24h!=null?`(${c.change24h>=0?'+':''}${c.change24h.toFixed(2)}%)`:''}` +
-      `</span><span class="ticker-sep">◆</span></span>`
-    ).join('');
+    const makeItems = (list) => list.map(art => {
+      const src = art.source ? `[${art.source}] ` : '';
+      const url = art.link || '#';
+      return `<a class="ticker-item" href="${url}" target="_blank" rel="noopener noreferrer">` +
+        `<span class="ticker-meta">${src}</span>` +
+        `<span class="ticker-title">${art.title || ''}</span>` +
+        `</a><span class="ticker-sep">◆</span>`;
+    }).join('');
+    const top3 = articles.slice(0, 3);
+    const content = makeItems(top3);
+    trackEl.innerHTML = content + content;
+    _restartTickerAnim(trackEl);
+    return;
+  }
+
+  // ── STOCK TICKER: market index prices + headlines ─────────────
+  let pricePrefix = _buildMarketIndexTickerItems();
+  // Fallback to portfolio prices if market index not loaded yet
+  if (!pricePrefix && Object.keys(state.stocks).length) {
+    pricePrefix = Object.entries(state.stocks).slice(0, 6).map(([sym, s]) => {
+      const chg = s.changePercent;
+      return `<span class="ticker-item">` +
+        `<span class="ticker-title">${sym}</span>` +
+        `<span class="ticker-meta" style="color:${(chg||0)>=0?'var(--green)':'var(--red)'}">${s.price?'$'+s.price.toFixed(2):''} ${chg!=null?`(${chg>=0?'+':''}${chg.toFixed(2)}%)`:''}</span>` +
+        `<span class="ticker-sep">◆</span></span>`;
+    }).join('');
   }
 
   if (!articles.length) {
-    // Only prices available — show them if we have any
     if (pricePrefix) {
       trackEl.innerHTML = pricePrefix + pricePrefix;
       _restartTickerAnim(trackEl);
@@ -651,7 +663,6 @@ function renderTickerMarquee(type) {
       `</a><span class="ticker-sep">◆</span>`;
   }).join('');
 
-  // Show prices + headlines together for maximum information density
   const allContent = (pricePrefix || '') + buildNewsItems();
   trackEl.innerHTML = allContent + allContent;
   _restartTickerAnim(trackEl);
