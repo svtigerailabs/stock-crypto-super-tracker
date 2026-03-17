@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock & Crypto Super Tracker</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=5" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
 </head>
 <body>
@@ -263,43 +263,40 @@
 
   <!-- MARKET SCREENER VIEW -->
   <section id="screener-view" class="view">
-    <div class="screener-header-row">
-      <h1 class="view-title">🔍 Market Screener</h1>
-      <div class="screener-search-inline">
-        <input type="text" id="screener-symbol-input" class="form-input" placeholder="🔍 Search symbol (e.g. TSLA, AAPL)…" onkeydown="if(event.key==='Enter')screenerSearchSymbol()" />
-        <button class="btn-secondary" onclick="screenerSearchSymbol()">Go</button>
-      </div>
-    </div>
-    <!-- Compact filter row: selects + SHOW buttons all on one line -->
-    <div class="screener-controls">
+    <!-- Single compact toolbar: title + search + selects + count buttons all on one line -->
+    <div class="screener-toolbar">
+      <h1 class="screener-toolbar-title">🔍 Screener</h1>
+      <div class="screener-ctrl-sep"></div>
+      <input type="text" id="screener-symbol-input" class="screener-sym-input" placeholder="🔍 Symbol…" onkeydown="if(event.key==='Enter')screenerSearchSymbol()" />
+      <button class="screener-go-btn" onclick="screenerSearchSymbol()">Go</button>
+      <div class="screener-ctrl-sep"></div>
       <select class="screener-select" id="screener-market" onchange="initTVScreener()">
-        <option value="america">🇺🇸 US Stocks</option>
+        <option value="america">🇺🇸 US</option>
         <option value="nasdaq">🔵 Nasdaq</option>
         <option value="nyse">⚪ NYSE</option>
         <option value="crypto">₿ Crypto</option>
         <option value="forex">💱 Forex</option>
       </select>
       <select class="screener-select" id="screener-column" onchange="initTVScreener()">
-        <option value="overview">📊 Overview</option>
-        <option value="performance" selected>📈 Performance</option>
-        <option value="valuation">💲 Valuation</option>
-        <option value="dividends">💰 Dividends</option>
-        <option value="technical_analysis">📉 Technicals</option>
+        <option value="overview">Overview</option>
+        <option value="performance" selected>Performance</option>
+        <option value="valuation">Valuation</option>
+        <option value="dividends">Dividends</option>
+        <option value="technical_analysis">Technicals</option>
       </select>
       <select class="screener-select" id="screener-screen" onchange="initTVScreener()">
         <option value="general">All Stocks</option>
-        <option value="most_capitalized" selected>Top Market Cap</option>
-        <option value="volume_leaders">Volume Leaders</option>
-        <option value="top_gainers">Top Gainers</option>
-        <option value="top_losers">Top Losers</option>
-        <option value="ath">All-Time Highs</option>
-        <option value="atl">All-Time Lows</option>
-        <option value="new_highs">52W Highs</option>
-        <option value="new_lows">52W Lows</option>
-        <option value="high_dividend">High Dividend</option>
+        <option value="most_capitalized" selected>Top Mkt Cap</option>
+        <option value="volume_leaders">Vol Leaders</option>
+        <option value="top_gainers">Gainers</option>
+        <option value="top_losers">Losers</option>
+        <option value="ath">ATH</option>
+        <option value="atl">ATL</option>
+        <option value="new_highs">52W High</option>
+        <option value="new_lows">52W Low</option>
+        <option value="high_dividend">Dividend</option>
       </select>
       <div class="screener-ctrl-sep"></div>
-      <span class="screener-show-label">Show</span>
       <button class="screener-len-btn" data-len="25" onclick="setScreenerLength(25)">25</button>
       <button class="screener-len-btn active" data-len="50" onclick="setScreenerLength(50)">50</button>
       <button class="screener-len-btn" data-len="100" onclick="setScreenerLength(100)">100</button>
@@ -666,6 +663,6 @@
 <div id="toast-container" class="toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

@@ -1068,7 +1068,11 @@ html, body {
 .rich-card .stock-card-detail { border-radius: var(--radius); }
 
 /* ─── LIVECOINWATCH-STYLE TABLE (lcw-table) ──────────────────── */
-.lcw-table-scroll-wrap { width: 100%; overflow-x: auto; }
+.lcw-table-scroll-wrap { width: 100%; overflow-x: scroll; }
+.lcw-table-scroll-wrap::-webkit-scrollbar { height: 7px; }
+.lcw-table-scroll-wrap::-webkit-scrollbar-track { background: var(--surface); border-radius: 4px; }
+.lcw-table-scroll-wrap::-webkit-scrollbar-thumb { background: #3d444d; border-radius: 4px; }
+.lcw-table-scroll-wrap::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 .lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 800px; }
 .lcw-crypto-table { min-width: 1140px; }
 
@@ -1787,28 +1791,33 @@ html, body {
 }
 .maps-widget-container iframe { border: none; }
 
-/* ── Market Screener Controls ── */
-.screener-header-row {
-  display: flex; align-items: center; gap: 12px; flex-wrap: nowrap;
-  padding: 7px 16px 5px; border-bottom: 1px solid var(--border); margin-bottom: 0;
+/* ── Market Screener — single compact toolbar ── */
+.screener-toolbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+  padding: 6px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
 }
-.screener-header-row .view-title { margin: 0; font-size: 16px; white-space: nowrap; }
-.screener-search-inline {
-  display: flex; align-items: center; gap: 8px; flex: 1;
+.screener-toolbar-title {
+  margin: 0; font-size: 14px; font-weight: 800; white-space: nowrap; flex-shrink: 0; color: var(--text);
 }
-.screener-search-inline .form-input {
-  flex: 1; max-width: 320px; font-size: 13px; padding: 6px 12px;
+.screener-sym-input {
+  width: 90px; flex-shrink: 0;
+  background: var(--card); border: 1px solid var(--border); color: var(--text);
+  padding: 4px 8px; border-radius: 6px; font-size: 11px; font-family: inherit; outline: none;
 }
-.screener-controls {
-  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
-  padding: 6px 16px; margin-bottom: 0; border-bottom: 1px solid var(--border);
+.screener-sym-input:focus { border-color: var(--blue); }
+.screener-go-btn {
+  background: var(--card); border: 1px solid var(--border); color: var(--text-dim);
+  padding: 4px 9px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  cursor: pointer; font-family: inherit; flex-shrink: 0; transition: all .15s;
 }
+.screener-go-btn:hover { border-color: var(--blue); color: var(--blue); }
 .screener-select {
   background: var(--card); border: 1px solid var(--border);
-  color: var(--text); padding: 4px 8px; border-radius: 6px;
-  font-size: 12px; font-family: inherit; cursor: pointer;
-  min-width: 130px;
+  color: var(--text); padding: 4px 6px; border-radius: 6px;
+  font-size: 11px; font-family: inherit; cursor: pointer; flex-shrink: 0;
 }
+/* Hide old containers */
+.screener-header-row, .screener-controls, .screener-search-inline { display: none !important; }
 
 /* ── Calendar Legend & Period Tabs ── */
 .cal-period-tabs { display: flex; gap: 6px; }

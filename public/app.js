@@ -3265,9 +3265,9 @@ async function loadDashboardNews() {
 let _cryptoTableZoom = 1.0;
 function adjustCryptoZoom(delta) {
   _cryptoTableZoom = Math.max(0.65, Math.min(1.25, parseFloat((_cryptoTableZoom + delta).toFixed(2))));
-  const wrap = document.querySelector('.lcw-table-scroll-wrap');
-  if (wrap) {
-    wrap.style.fontSize = (_cryptoTableZoom * 13) + 'px';
+  const table = document.querySelector('.lcw-crypto-table');
+  if (table) {
+    table.style.zoom = _cryptoTableZoom;
     const label = document.getElementById('crypto-zoom-label');
     if (label) label.textContent = Math.round(_cryptoTableZoom * 100) + '%';
   }
