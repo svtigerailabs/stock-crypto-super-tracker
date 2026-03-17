@@ -909,18 +909,19 @@ async function fetchRSSNews() {
   if (rssCache.data && (Date.now() - rssCache.fetchedAt) < RSS_CACHE_TTL) return rssCache.data;
 
   const feeds = [
+    // Most reliable first
+    { url: 'https://finance.yahoo.com/news/rssindex', name: 'Yahoo Finance' },
+    { url: 'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines', name: 'MarketWatch' },
     { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', name: 'CNBC' },
     { url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664', name: 'CNBC Markets' },
-    { url: 'https://feeds.bloomberg.com/markets/news.rss', name: 'Bloomberg' },
     { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', name: 'WSJ Markets' },
-    { url: 'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines', name: 'MarketWatch' },
-    { url: 'https://finance.yahoo.com/news/rssindex', name: 'Yahoo Finance' },
-    { url: 'https://feeds.reuters.com/reuters/businessNews', name: 'Reuters' },
-    { url: 'https://www.investing.com/rss/news.rss', name: 'Investing.com' },
-    { url: 'https://www.ft.com/rss/home/uk', name: 'Financial Times' },
-    { url: 'https://seekingalpha.com/feed.xml', name: 'Seeking Alpha' },
+    { url: 'https://www.benzinga.com/feed', name: 'Benzinga' },
     { url: 'https://feeds.feedburner.com/thestreet/investing', name: 'TheStreet' },
     { url: 'https://www.fool.com/a/feeds/foolwatch', name: 'Motley Fool' },
+    { url: 'https://feeds.reuters.com/reuters/businessNews', name: 'Reuters' },
+    { url: 'https://feeds.bloomberg.com/markets/news.rss', name: 'Bloomberg' },
+    { url: 'https://www.ft.com/rss/home/uk', name: 'Financial Times' },
+    { url: 'https://seekingalpha.com/feed.xml', name: 'Seeking Alpha' },
   ];
 
   let allItems = [];
@@ -1165,7 +1166,8 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   const now = new Date();
   const cacheKey = `${id}_${range}`;
   const cached = cryptoChartCache[cacheKey];
-  if (cached && (Date.now() - cached.at) < 10 * 60 * 1000) return res.json(cached.data);
+  const cacheTTL = range === '1d' ? 60 * 1000 : 10 * 60 * 1000; // 1 min for intraday, 10 min for longer ranges
+  if (cached && (Date.now() - cached.at) < cacheTTL) return res.json(cached.data);
 
   // Extract symbol from Coinpaprika ID: "btc-bitcoin" → "BTC"
   const symbol = id.split('-')[0].toUpperCase();
@@ -1196,32 +1198,58 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── CRYPTO NEWS (multiple reputable sources) ──────────────────────────────
+// ─── CRYPTO NEWS (CryptoCompare API primary + RSS fallback) ────────────────
 const cryptoNewsCache = { data: null, at: 0 };
 async function fetchCryptoNews() {
-  if (cryptoNewsCache.data && (Date.now() - cryptoNewsCache.at) < 10 * 60 * 1000) return cryptoNewsCache.data;
-  const feeds = [
-    { url: 'https://cointelegraph.com/rss', source: 'CoinTelegraph' },
-    { url: 'https://decrypt.co/feed', source: 'Decrypt' },
-    { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
-  ];
-  const articles = [];
-  for (const feed of feeds) {
-    try {
-      const r = await fetch(feed.url, { signal: AbortSignal.timeout(6000), headers: { 'User-Agent': 'Mozilla/5.0' } });
-      if (!r.ok) continue;
-      const xml = await r.text();
-      const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/g)].slice(0, 8);
-      for (const [item] of items) {
-        const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1]?.trim();
-        const link = (item.match(/<link>(.*?)<\/link>/) || item.match(/<guid[^>]*>(https?:\/\/[^<]+)<\/guid>/))?.[1]?.trim();
-        const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim();
-        if (title && link) articles.push({ title, link, source: feed.source, pubDate: pubDate || '' });
-      }
-    } catch (_) { /* skip failed feed */ }
+  if (cryptoNewsCache.data && (Date.now() - cryptoNewsCache.at) < 8 * 60 * 1000) return cryptoNewsCache.data;
+  let articles = [];
+
+  // Primary: CryptoCompare News API (free, no key, highly reliable)
+  try {
+    const r = await fetch('https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=30', {
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (r.ok) {
+      const json = await r.json();
+      (json.Data || []).forEach(item => {
+        if (item.title && item.url) {
+          articles.push({
+            title: item.title,
+            link: item.url,
+            source: item.source_info?.name || item.source || 'CryptoCompare',
+            publishedAt: item.published_on ? new Date(item.published_on * 1000).toISOString() : null,
+          });
+        }
+      });
+    }
+  } catch (_) { /* fallback to RSS */ }
+
+  // Fallback: RSS feeds (if API gave < 5 articles)
+  if (articles.length < 5) {
+    const feeds = [
+      { url: 'https://cointelegraph.com/rss', source: 'CoinTelegraph' },
+      { url: 'https://decrypt.co/feed', source: 'Decrypt' },
+      { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
+    ];
+    await Promise.allSettled(feeds.map(async feed => {
+      try {
+        const r = await fetch(feed.url, { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (!r.ok) return;
+        const xml = await r.text();
+        const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/g)].slice(0, 8);
+        for (const [item] of items) {
+          const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1]?.trim();
+          const link = (item.match(/<link>(.*?)<\/link>/) || item.match(/<guid[^>]*>(https?:\/\/[^<]+)<\/guid>/))?.[1]?.trim();
+          const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim();
+          if (title && link) articles.push({ title, link, source: feed.source, publishedAt: pubDate ? new Date(pubDate).toISOString() : null });
+        }
+      } catch (_) {}
+    }));
   }
-  // Sort by date desc, dedupe
-  articles.sort((a, b) => (new Date(b.pubDate) - new Date(a.pubDate)) || 0);
+
+  // Sort newest first, dedupe by title
+  articles.sort((a, b) => (new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0)) || 0);
   const seen = new Set();
   const deduped = articles.filter(a => { if (seen.has(a.title)) return false; seen.add(a.title); return true; });
   cryptoNewsCache.data = deduped.slice(0, 30);

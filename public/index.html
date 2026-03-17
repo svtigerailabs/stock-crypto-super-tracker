@@ -263,7 +263,7 @@
       </select>
       <select class="screener-select" id="screener-screen" onchange="initTVScreener()">
         <option value="general">All Stocks</option>
-        <option value="most_capitalized">Top Market Cap</option>
+        <option value="most_capitalized" selected>Top Market Cap</option>
         <option value="volume_leaders">Volume Leaders</option>
         <option value="top_gainers">Top Gainers</option>
         <option value="top_losers">Top Losers</option>
@@ -318,7 +318,6 @@
           <button class="view-toggle-btn" data-mode="grid" onclick="switchCryptoView('grid')" title="Card View">⊞</button>
           <button class="view-toggle-btn active" data-mode="detailed" onclick="switchCryptoView('detailed')" title="Detailed Table">📋</button>
         </div>
-        <button class="btn-sm-edit" id="crypto-edit-mode-btn" onclick="toggleCryptoEditMode()">✏️ Edit</button>
         <button class="btn-secondary" onclick="refreshCrypto()">🔄 Refresh</button>
       </div>
     </div>

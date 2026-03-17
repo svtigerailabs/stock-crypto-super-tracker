@@ -4,7 +4,7 @@ const state = {
   profiles: {}, hoverCache: {},
   view: 'dashboard', selectedSymbol: null, searchTimeout: null,
   dashViewMode: 'grid', cryptoViewMode: 'detailed', cryptoData: [],
-  cryptoEditMode: false, cryptoChartPeriod: '7d', cryptoCharts: {},
+  cryptoEditMode: false, cryptoChartPeriod: '1d', cryptoCharts: {},
   hiddenCryptoIds: JSON.parse(localStorage.getItem('hiddenCryptoIds') || '[]'),
   pinnedCryptoIds: JSON.parse(localStorage.getItem('pinnedCryptoIds') || '[]'),
   favoriteCryptoIds: JSON.parse(localStorage.getItem('favoriteCryptoIds') || '[]'),
@@ -51,7 +51,7 @@ async function init() {
   setTimeout(_preloadStockCharts, 5000); // initial load after 5s
   setInterval(_preloadStockCharts, 30 * 60 * 1000);
   setTimeout(_preloadCryptoCharts, 8000);
-  setInterval(_preloadCryptoCharts, 5 * 60 * 1000);
+  setInterval(_preloadCryptoCharts, 60 * 1000); // refresh charts every 1 min
 
   // Eagerly load all stock profiles so data columns populate on first view
   setTimeout(() => loadProfilesBatch(getDashSymbols()), 3000);
@@ -110,55 +110,76 @@ async function _preload6MChange(coins) {
   }
 }
 
-async function _preloadCryptoExtPerf(coins) {
-  // Fetch 730d (2Y) data once; derive YTD, 2Y from it. Fetch 3Y separately.
+// Helper: compute YTD + 2Y from 730d price array and update DOM in-place
+function _computeAndUpdateExtPerf2Y(c, prices) {
   const now = new Date();
   const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
+  c.change2y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+  const ytdIdx = Math.max(0, prices.length - ytdDays - 1);
+  if (prices[ytdIdx] > 0) c.changeYTD = ((prices[prices.length - 1] - prices[ytdIdx]) / prices[ytdIdx]) * 100;
+  const ytdEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-ytd-col`);
+  const y2El  = document.querySelector(`#lcw-crypto-${c.id} .lcw-2y-col`);
+  if (ytdEl && c.changeYTD != null) { const d = c.changeYTD >= 0 ? 'up' : 'down'; ytdEl.className = `lcw-col lcw-pct ${d} lcw-ytd-col`; ytdEl.textContent = `${c.changeYTD >= 0 ? '+' : ''}${c.changeYTD.toFixed(2)}%`; }
+  if (y2El  && c.change2y  != null) { const d = c.change2y  >= 0 ? 'up' : 'down'; y2El.className  = `lcw-col lcw-pct ${d} lcw-2y-col`;  y2El.textContent  = `${c.change2y  >= 0 ? '+' : ''}${c.change2y.toFixed(2)}%`;  }
+}
 
-  for (const c of coins) {
-    const needsYTD = c.changeYTD == null;
-    const needs2y  = c.change2y  == null;
-    const needs3y  = c.change3y  == null;
-    if (!needsYTD && !needs2y && !needs3y) continue;
+async function _preloadCryptoExtPerf(coins) {
+  // Separate coins by what they need
+  const needs2yList = coins.filter(c => c.change2y == null || c.changeYTD == null);
+  const needs3yList = coins.filter(c => c.change3y == null);
 
-    // Derive YTD + 2Y from 730d chart
-    if (needsYTD || needs2y) {
+  // Step 1: Compute from cache immediately (no API call, instant)
+  const toFetch2y = [];
+  for (const c of needs2yList) {
+    const cached = state.cryptoCharts[c.id]?.['730d'];
+    if (cached?.length >= 2) { _computeAndUpdateExtPerf2Y(c, cached); }
+    else toFetch2y.push(c);
+  }
+
+  // Step 2: Fetch missing 730d data in parallel batches of 3
+  for (let i = 0; i < toFetch2y.length; i += 3) {
+    const batch = toFetch2y.slice(i, i + 3);
+    await Promise.all(batch.map(async c => {
       try {
-        const prices = state.cryptoCharts[c.id]?.['730d'] || await api('GET', `/crypto/${c.id}/chart?range=730d`);
-        if (Array.isArray(prices) && prices.length >= 2) {
-          if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
-          state.cryptoCharts[c.id]['730d'] = prices;
-          c.change2y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
-          const ytdIdx = Math.max(0, prices.length - ytdDays - 1);
-          if (prices[ytdIdx] > 0) c.changeYTD = ((prices[prices.length - 1] - prices[ytdIdx]) / prices[ytdIdx]) * 100;
-          // Update cells in-place
-          const ytdEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-ytd-col`);
-          const y2El  = document.querySelector(`#lcw-crypto-${c.id} .lcw-2y-col`);
-          if (ytdEl && c.changeYTD != null) { const d = c.changeYTD >= 0 ? 'up' : 'down'; ytdEl.className = `lcw-col lcw-pct ${d} lcw-ytd-col`; ytdEl.textContent = `${c.changeYTD >= 0 ? '+' : ''}${c.changeYTD.toFixed(2)}%`; }
-          if (y2El  && c.change2y  != null) { const d = c.change2y  >= 0 ? 'up' : 'down'; y2El.className  = `lcw-col lcw-pct ${d} lcw-2y-col`;  y2El.textContent  = `${c.change2y  >= 0 ? '+' : ''}${c.change2y.toFixed(2)}%`;  }
-        }
+        const prices = await api('GET', `/crypto/${c.id}/chart?range=730d`);
+        if (!Array.isArray(prices) || prices.length < 2) return;
+        if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+        state.cryptoCharts[c.id]['730d'] = prices;
+        _computeAndUpdateExtPerf2Y(c, prices);
       } catch {}
-      await new Promise(r => setTimeout(r, 1500));
-    }
+    }));
+    if (i + 3 < toFetch2y.length) await new Promise(r => setTimeout(r, 600));
+  }
 
-    // 3Y: separate fetch
-    if (needs3y) {
+  // Step 3: Fetch 3Y data in parallel batches of 3
+  const toFetch3y = needs3yList.filter(c => !state.cryptoCharts[c.id]?.['3y']);
+  // Compute from cache first
+  needs3yList.filter(c => state.cryptoCharts[c.id]?.['3y']?.length >= 2).forEach(c => {
+    const prices = state.cryptoCharts[c.id]['3y'];
+    c.change3y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+    const y3El = document.querySelector(`#lcw-crypto-${c.id} .lcw-3y-col`);
+    if (y3El) { const d = c.change3y >= 0 ? 'up' : 'down'; y3El.className = `lcw-col lcw-pct ${d} lcw-3y-col`; y3El.textContent = `${c.change3y >= 0 ? '+' : ''}${c.change3y.toFixed(2)}%`; }
+  });
+  for (let i = 0; i < toFetch3y.length; i += 3) {
+    const batch = toFetch3y.slice(i, i + 3);
+    await Promise.all(batch.map(async c => {
       try {
-        const prices3y = await api('GET', `/crypto/${c.id}/chart?range=3y`);
-        if (Array.isArray(prices3y) && prices3y.length >= 2) {
-          c.change3y = ((prices3y[prices3y.length - 1] - prices3y[0]) / prices3y[0]) * 100;
-          const y3El = document.querySelector(`#lcw-crypto-${c.id} .lcw-3y-col`);
-          if (y3El) { const d = c.change3y >= 0 ? 'up' : 'down'; y3El.className = `lcw-col lcw-pct ${d} lcw-3y-col`; y3El.textContent = `${c.change3y >= 0 ? '+' : ''}${c.change3y.toFixed(2)}%`; }
-        }
+        const prices = await api('GET', `/crypto/${c.id}/chart?range=3y`);
+        if (!Array.isArray(prices) || prices.length < 2) return;
+        if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+        state.cryptoCharts[c.id]['3y'] = prices;
+        c.change3y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+        const y3El = document.querySelector(`#lcw-crypto-${c.id} .lcw-3y-col`);
+        if (y3El) { const d = c.change3y >= 0 ? 'up' : 'down'; y3El.className = `lcw-col lcw-pct ${d} lcw-3y-col`; y3El.textContent = `${c.change3y >= 0 ? '+' : ''}${c.change3y.toFixed(2)}%`; }
       } catch {}
-      await new Promise(r => setTimeout(r, 1500));
-    }
+    }));
+    if (i + 3 < toFetch3y.length) await new Promise(r => setTimeout(r, 600));
   }
 }
 
 async function _preloadCryptoCharts() {
   if (!state.cryptoData?.length) return;
-  const period = state.cryptoChartPeriod || '7d';
+  const period = state.cryptoChartPeriod || '1d';
   // Cover all visible coins (up to 30), prioritising DEFAULT_CRYPTO_SYMBOLS
   const defaultIds = DEFAULT_CRYPTO_SYMBOLS.map(s => s.toLowerCase());
   const allCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds?.includes(c.id));
@@ -166,21 +187,25 @@ async function _preloadCryptoCharts() {
   const rest = allCoins.filter(c => !priority.includes(c)).slice(0, 14);
   const coins = [...priority, ...rest].slice(0, 30);
 
-  for (const c of coins) {
-    if (state.cryptoCharts[c.id]?.[period]) continue;
-    try {
-      const prices = await api('GET', `/crypto/${c.id}/chart?range=${period}`);
-      if (!Array.isArray(prices) || !prices.length) continue;
-      if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
-      state.cryptoCharts[c.id][period] = prices;
-      // Update chart cell in-place if crypto table is visible
-      const chartCell = document.getElementById(`crypto-chart-${c.id}`);
-      if (chartCell && state.cryptoViewMode === 'detailed') {
-        const spark = prices.length > 50 ? prices.filter((_, i) => i % Math.ceil(prices.length / 50) === 0) : prices;
-        chartCell.innerHTML = buildSparklineSVG(spark, 130, 32, '#3fb950', '#f85149');
-      }
-    } catch {}
-    await new Promise(r => setTimeout(r, 1500)); // rate-limit
+  // Fetch in batches of 3 in parallel for speed
+  const toFetch = coins.filter(c => !state.cryptoCharts[c.id]?.[period]);
+  for (let i = 0; i < toFetch.length; i += 3) {
+    const batch = toFetch.slice(i, i + 3);
+    await Promise.all(batch.map(async c => {
+      try {
+        const prices = await api('GET', `/crypto/${c.id}/chart?range=${period}`);
+        if (!Array.isArray(prices) || !prices.length) return;
+        if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+        state.cryptoCharts[c.id][period] = prices;
+        // Update chart cell in-place if crypto table is visible
+        const chartCell = document.getElementById(`crypto-chart-${c.id}`);
+        if (chartCell && state.cryptoViewMode === 'detailed' && state.cryptoChartPeriod === period) {
+          const spark = prices.length > 50 ? prices.filter((_, i2) => i2 % Math.ceil(prices.length / 50) === 0) : prices;
+          chartCell.innerHTML = buildSparklineSVG(spark, 130, 32, '#77DD77', '#FF6B6B');
+        }
+      } catch {}
+    }));
+    if (i + 3 < toFetch.length) await new Promise(r => setTimeout(r, 400));
   }
 }
 
@@ -480,7 +505,17 @@ function renderTickerMarquee(type) {
   const trackEl = document.getElementById(`${type}-ticker-track`);
   if (!trackEl) return;
   if (!articles.length) {
-    // Fallback: show live crypto prices or "loading" while retrying
+    // Fallback: show live prices while retrying
+    if (type === 'stock' && Object.keys(state.stocks).length) {
+      const items = Object.entries(state.stocks).slice(0, 10).map(([sym, s]) => {
+        const chg = s.changePercent;
+        return `<span class="ticker-item">` +
+          `<span class="ticker-title">${sym}</span>` +
+          `<span class="ticker-meta" style="color:${(chg||0)>=0?'var(--green)':'var(--red)'}">${s.price?'$'+s.price.toFixed(2):''} ${chg!=null?`(${chg>=0?'+':''}${chg.toFixed(2)}%)`:''}` +
+          `</span><span class="ticker-sep">•</span></span>`;
+      }).join('');
+      if (items) { trackEl.innerHTML = items + items; _restartTickerAnim(trackEl); return; }
+    }
     if (type === 'crypto' && state.cryptoData?.length) {
       const items = state.cryptoData.slice(0, 8).map(c =>
         `<span class="ticker-item">
@@ -3015,8 +3050,10 @@ async function renderCryptoDashboard() {
     grid.className = 'stocks-list';
     grid.innerHTML = buildCryptoDetailedTable(visibleCoins);
     if (newsSection) newsSection.style.display = 'none';
+    // Load charts immediately for visible period (shows cached, fetches missing)
+    setTimeout(() => setCryptoChartPeriod(state.cryptoChartPeriod), 50);
     // Preload extended perf data (YTD, 2Y, 3Y) in background
-    setTimeout(() => _preloadCryptoExtPerf(visibleCoins.slice(0, 20)), 2000);
+    setTimeout(() => _preloadCryptoExtPerf(visibleCoins.slice(0, 20)), 500);
   } else if (mode === 'heatmap') {
     grid.className = 'crypto-heatmap-container';
     grid.innerHTML = `<div id="tv-crypto-heatmap-container" class="maps-widget-container" style="height:calc(100vh - 205px);min-height:500px"></div>`;
@@ -3665,17 +3702,18 @@ async function setCryptoChartPeriod(period) {
     if (favs.length) visibleCoins = favs;
   }
   visibleCoins = visibleCoins.sort((a, b) => (a.rank || 999) - (b.rank || 999));
+  // '7d' uses Coinpaprika sparkline (instant, no API call needed)
   if (period === '7d') {
     visibleCoins.forEach(c => {
       const cell = document.getElementById(`crypto-chart-${c.id}`);
       if (!cell) return;
       const spark = (c.sparkline||[]).length > 50 ? c.sparkline.filter((_,i)=>i%Math.ceil(c.sparkline.length/50)===0) : c.sparkline||[];
-      cell.innerHTML = buildSparklineSVG(spark, 130, 32, '#3fb950', '#f85149');
+      cell.innerHTML = buildSparklineSVG(spark, 130, 32, '#77DD77', '#FF6B6B');
     });
     return;
   }
 
-  // For other periods: show loading, then fetch in batches
+  // For other periods: show cached immediately, show loading for missing, then fetch in parallel batches
   if (!state.cryptoCharts) state.cryptoCharts = {};
   const toFetch = visibleCoins.filter(c => !state.cryptoCharts[c.id]?.[period]);
   // Show loading dots for uncached cells
@@ -3689,41 +3727,39 @@ async function setCryptoChartPeriod(period) {
     if (!cell) return;
     const data = state.cryptoCharts[c.id][period];
     const spark = data.length > 50 ? data.filter((_,i)=>i%Math.ceil(data.length/50)===0) : data;
-    cell.innerHTML = buildSparklineSVG(spark, 130, 32, '#3fb950', '#f85149');
+    cell.innerHTML = buildSparklineSVG(spark, 130, 32, '#77DD77', '#FF6B6B');
   });
 
-  // Fetch all uncached coins (CryptoCompare is more lenient than CoinGecko)
-  for (let i = 0; i < toFetch.length; i++) {
-    const c = toFetch[i];
-    try {
-      const prices = await api('GET', `/crypto/${c.id}/chart?range=${period}`);
-      if (!Array.isArray(prices) || !prices.length) throw new Error('empty');
-      if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
-      state.cryptoCharts[c.id][period] = prices;
-      // Compute 6M change from 180d chart data
-      if (period === '180d' && prices.length >= 2) {
-        const change6m = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
-        const coinRef = state.cryptoData.find(x => x.id === c.id);
-        if (coinRef) coinRef.change6m = change6m;
-        const pctEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-6m-col`);
-        if (pctEl) {
-          const d = change6m >= 0 ? 'up' : 'down';
-          pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`;
-          pctEl.textContent = `${change6m >= 0 ? '+' : ''}${change6m.toFixed(2)}%`;
+  // Fetch uncached coins in parallel batches of 3 for speed
+  for (let i = 0; i < toFetch.length; i += 3) {
+    const batch = toFetch.slice(i, i + 3);
+    await Promise.all(batch.map(async c => {
+      try {
+        const prices = await api('GET', `/crypto/${c.id}/chart?range=${period}`);
+        if (!Array.isArray(prices) || !prices.length) throw new Error('empty');
+        if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+        state.cryptoCharts[c.id][period] = prices;
+        // Compute 6M change from 180d chart data
+        if (period === '180d' && prices.length >= 2) {
+          const change6m = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+          const coinRef = state.cryptoData.find(x => x.id === c.id);
+          if (coinRef) coinRef.change6m = change6m;
+          const pctEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-6m-col`);
+          if (pctEl) { const d = change6m >= 0 ? 'up' : 'down'; pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`; pctEl.textContent = `${change6m >= 0 ? '+' : ''}${change6m.toFixed(2)}%`; }
         }
+        if (state.cryptoChartPeriod !== period) return; // user switched period
+        const cell = document.getElementById(`crypto-chart-${c.id}`);
+        if (cell) {
+          const spark = prices.length > 50 ? prices.filter((_,i2)=>i2%Math.ceil(prices.length/50)===0) : prices;
+          cell.innerHTML = buildSparklineSVG(spark, 130, 32, '#77DD77', '#FF6B6B');
+        }
+      } catch {
+        const cell = document.getElementById(`crypto-chart-${c.id}`);
+        if (cell) cell.innerHTML = '<span style="color:var(--text-dim);font-size:9px">—</span>';
       }
-      if (state.cryptoChartPeriod !== period) return; // user switched period
-      const cell = document.getElementById(`crypto-chart-${c.id}`);
-      if (cell) {
-        const spark = prices.length > 50 ? prices.filter((_,i2)=>i2%Math.ceil(prices.length/50)===0) : prices;
-        cell.innerHTML = buildSparklineSVG(spark, 130, 32, '#3fb950', '#f85149');
-      }
-    } catch {
-      const cell = document.getElementById(`crypto-chart-${c.id}`);
-      if (cell) cell.innerHTML = '<span style="color:var(--text-dim);font-size:9px">—</span>';
-    }
-    // 600ms between requests to stay within CryptoCompare free-tier limits
-    if (i < toFetch.length - 1) await new Promise(r => setTimeout(r, 600));
+    }));
+    // 400ms between batches to respect CryptoCompare free-tier limits
+    if (i + 3 < toFetch.length) await new Promise(r => setTimeout(r, 400));
   }
 }
 
@@ -4229,7 +4265,7 @@ function initTVMaps() {
     locale: 'en',
     symbolUrl: '',
     colorTheme: 'dark',
-    hasTopBar: false,
+    hasTopBar: true,
     isDataSetEnabled: false,
     isZoomEnabled: true,
     hasSymbolTooltip: true,
@@ -4251,7 +4287,7 @@ function initTVCryptoHeatmap() {
     blockColor: 'change',
     locale: 'en',
     colorTheme: 'dark',
-    hasTopBar: false,
+    hasTopBar: true,
     width: '100%',
     height: h,
   });
