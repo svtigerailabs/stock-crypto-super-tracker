@@ -1009,9 +1009,14 @@ async function fetchLatestNews(watchedSymbols = [], xHandles = [], forceRefresh 
   scored.sort((a, b) => (b.priority - a.priority) || (new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0)));
 
   const result = scored.slice(0, 150);
-  latestNewsCache.data = result;
-  latestNewsCache.fetchedAt = Date.now();
-  return result;
+  if (result.length > 0) {
+    latestNewsCache.data = result;
+    latestNewsCache.fetchedAt = Date.now();
+    console.log(`Latest news: fetched ${result.length} articles`);
+  } else if (latestNewsCache.data?.length) {
+    console.warn('Latest news: all sources failed, returning stale cache');
+  }
+  return latestNewsCache.data || [];
 }
 
 // ─── CRYPTO (Coinpaprika free API — no key needed, cloud-friendly) ───────────
@@ -1172,6 +1177,42 @@ app.get('/api/stock/:symbol/financials', async (req, res) => {
 app.get('/api/news/rss', async (req, res) => {
   try { res.json(await fetchRSSNews()); }
   catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ─── ECONOMIC CALENDAR ────────────────────────────────────────────────────────
+const econCalCache = { data: null, fetchedAt: 0 };
+const ECON_CAL_TTL = 30 * 60 * 1000; // 30 min cache
+
+async function fetchEconCalendar() {
+  if (econCalCache.data && (Date.now() - econCalCache.fetchedAt) < ECON_CAL_TTL) return econCalCache.data;
+  try {
+    const urls = [
+      'https://nfs.faireconomy.media/ff_calendar_thisweek.json',
+      'https://nfs.faireconomy.media/ff_calendar_nextweek.json',
+    ];
+    const results = await Promise.allSettled(urls.map(async u => {
+      const r = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }));
+    let events = [];
+    results.forEach(r => { if (r.status === 'fulfilled' && Array.isArray(r.value)) events.push(...r.value); });
+    // Sort by date
+    events.sort((a, b) => new Date(a.date) - new Date(b.date));
+    if (events.length) {
+      econCalCache.data = events;
+      econCalCache.fetchedAt = Date.now();
+      console.log(`Economic calendar: fetched ${events.length} events`);
+    }
+  } catch (e) {
+    console.error('Economic calendar fetch error:', e.message);
+  }
+  return econCalCache.data || [];
+}
+
+app.get('/api/economic-calendar', async (req, res) => {
+  try { res.json(await fetchEconCalendar()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/crypto', async (req, res) => {
@@ -1518,13 +1559,30 @@ function fireNotification(alert, message) {
 
 let cronJob = null;
 
+function isServerMarketHours() {
+  const now = new Date();
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  if (day === 0 || day === 6) return false;
+  const h = et.getHours(), m = et.getMinutes();
+  const mins = h * 60 + m;
+  return mins >= 240 && mins <= 1200; // 4:00 AM to 8:00 PM ET
+}
+
 function restartCron() {
   if (cronJob) cronJob.stop();
-  const mins = Math.max(1, parseInt(settings.checkIntervalMinutes) || 1);
+  // During market hours: check every 1 min. Off-hours: every 30 min (still gets pre/post data)
+  const marketOpen = isServerMarketHours();
+  const mins = marketOpen ? 1 : 30;
   const expr = mins === 1 ? '* * * * *' : `*/${mins} * * * *`;
   cronJob = cron.schedule(expr, checkAlerts);
-  console.log(`⏱  Checking every ${mins} minute(s)`);
+  console.log(`⏱  Checking every ${mins} minute(s) [market ${marketOpen ? 'OPEN' : 'CLOSED'}]`);
 }
+
+// Re-evaluate cron interval every 15 minutes (catches market open/close transitions)
+setInterval(() => {
+  restartCron();
+}, 15 * 60 * 1000);
 
 async function checkAlerts() {
   const active = alerts.filter(a => a.isActive);
@@ -1587,7 +1645,7 @@ server.listen(PORT, () => {
   if (alerts.length > 0) setTimeout(checkAlerts, 2000);
   // Pre-warm news caches so first client request never waits
   setTimeout(() => {
-    Promise.allSettled([fetchRSSNews(), fetchCryptoNews()])
-      .then(() => console.log('📰 News caches pre-warmed'));
+    Promise.allSettled([fetchRSSNews(), fetchCryptoNews(), fetchEconCalendar()])
+      .then(() => console.log('📰 News & calendar caches pre-warmed'));
   }, 3000);
 });

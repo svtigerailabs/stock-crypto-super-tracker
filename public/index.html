@@ -19,49 +19,57 @@
     </div>
   </div>
   <ul class="nav-list">
-    <li class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
-      <span class="nav-icon">⊞</span> Stock Dashboard
-    </li>
-    <li class="nav-item" data-view="sectors" onclick="navigate('sectors')">
-      <span class="nav-icon">📊</span> Market Sectors
-    </li>
-    <li class="nav-item" data-view="maps" onclick="navigate('maps')">
-      <span class="nav-icon">🗺️</span> Market Maps
-    </li>
-    <li class="nav-item" data-view="screener" onclick="navigate('screener')">
-      <span class="nav-icon">🔍</span> Market Screener
-    </li>
-    <li class="nav-item" data-view="tradingview" onclick="navigate('tradingview')">
-      <span class="nav-icon">📉</span> TradingView
-    </li>
-    <li class="nav-item" data-view="calendar" onclick="navigate('calendar')">
-      <span class="nav-icon">📅</span> Market Calendar
-    </li>
-    <li class="nav-item" data-view="crypto" onclick="navigate('crypto')">
-      <span class="nav-icon">₿</span> Crypto Dashboard
-    </li>
-    <li class="nav-item" data-view="settings" onclick="navigate('settings')">
-      <span class="nav-icon">⚙</span> Settings
-    </li>
-    <li class="nav-item" data-view="profiles" onclick="navigate('profiles')">
-      <span class="nav-icon">👤</span> Saved Profiles
-      <span class="nav-badge" id="nav-profiles-badge" style="display:none">0</span>
-    </li>
-    <li class="nav-item" data-view="alerts" onclick="navigate('alerts')">
-      <span class="nav-icon">🔔</span> Alerts
-      <span class="nav-badge" id="nav-alerts-badge" style="display:none">0</span>
-    </li>
-    <li class="nav-item" data-view="history" onclick="navigate('history')">
-      <span class="nav-icon">📋</span> History
-      <span class="nav-badge" id="nav-history-badge" style="display:none">0</span>
-    </li>
-    <li class="nav-item" data-view="news" onclick="navigate('news')">
-      <span class="nav-icon">📰</span> Latest News
-    </li>
-    <li class="nav-item" data-view="saved-news" onclick="navigate('saved-news')">
-      <span class="nav-icon">🔖</span> Saved News
-      <span class="nav-badge" id="nav-saved-badge" style="display:none">0</span>
-    </li>
+    <!-- Markets Group -->
+    <li class="nav-group-label" onclick="toggleNavGroup(this)"><span class="nav-group-arrow">▾</span> Markets</li>
+    <div class="nav-group open">
+      <li class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
+        <span class="nav-icon">⊞</span> Stock Dashboard
+      </li>
+      <li class="nav-item" data-view="sectors" onclick="navigate('sectors')">
+        <span class="nav-icon">📊</span> Market Sectors
+      </li>
+      <li class="nav-item" data-view="maps" onclick="navigate('maps')">
+        <span class="nav-icon">🗺️</span> Market Maps
+      </li>
+      <li class="nav-item" data-view="screener" onclick="navigate('screener')">
+        <span class="nav-icon">🔍</span> Screener
+      </li>
+      <li class="nav-item" data-view="tradingview" onclick="navigate('tradingview')">
+        <span class="nav-icon">📉</span> TradingView
+      </li>
+      <li class="nav-item" data-view="calendar" onclick="navigate('calendar')">
+        <span class="nav-icon">📅</span> Calendar
+      </li>
+      <li class="nav-item" data-view="news" onclick="navigate('news')">
+        <span class="nav-icon">📰</span> News
+      </li>
+    </div>
+    <!-- Crypto Group -->
+    <li class="nav-group-label" onclick="toggleNavGroup(this)"><span class="nav-group-arrow">▾</span> Crypto</li>
+    <div class="nav-group open">
+      <li class="nav-item" data-view="crypto" onclick="navigate('crypto')">
+        <span class="nav-icon">₿</span> Crypto Dashboard
+      </li>
+    </div>
+    <!-- Tools Group -->
+    <li class="nav-group-label" onclick="toggleNavGroup(this)"><span class="nav-group-arrow">▾</span> Tools</li>
+    <div class="nav-group open">
+      <li class="nav-item" data-view="alerts" onclick="navigate('alerts')">
+        <span class="nav-icon">🔔</span> Alerts
+        <span class="nav-badge" id="nav-alerts-badge" style="display:none">0</span>
+      </li>
+      <li class="nav-item" data-view="history" onclick="navigate('history')">
+        <span class="nav-icon">📋</span> History
+        <span class="nav-badge" id="nav-history-badge" style="display:none">0</span>
+      </li>
+      <li class="nav-item" data-view="profiles" onclick="navigate('profiles')">
+        <span class="nav-icon">👤</span> Profiles
+        <span class="nav-badge" id="nav-profiles-badge" style="display:none">0</span>
+      </li>
+      <li class="nav-item" data-view="settings" onclick="navigate('settings')">
+        <span class="nav-icon">⚙</span> Settings
+      </li>
+    </div>
   </ul>
   <div class="sidebar-footer">
     <button class="mute-btn" id="mute-alerts-btn" onclick="toggleAlertsMute()" title="Mute/Unmute Alerts">
@@ -207,33 +215,51 @@
   <section id="calendar-view" class="view">
     <div class="view-header">
       <div>
-        <h1 class="view-title">📅 US Market Calendar</h1>
-        <p class="view-subtitle">US economic events, earnings &amp; Fed decisions — powered by TradingView</p>
+        <h1 class="view-title">📅 Economic Calendar</h1>
+        <p class="view-subtitle" id="econ-cal-subtitle">This week's economic events &amp; data releases</p>
       </div>
       <div class="header-actions">
-        <div class="cal-period-tabs" id="cal-period-tabs">
-          <button class="cal-period-btn active" data-range="week" onclick="setCalendarPeriod('week')">📅 This Week</button>
-          <button class="cal-period-btn" data-range="month" onclick="setCalendarPeriod('month')">🗓️ This Month</button>
-          <button class="cal-period-btn" data-range="quarter" onclick="setCalendarPeriod('quarter')">📆 This Quarter</button>
+        <div class="cal-period-tabs" id="cal-tab-switcher">
+          <button class="cal-period-btn active" data-tab="econ" onclick="switchCalTab('econ')">📊 Economic Data</button>
+          <button class="cal-period-btn" data-tab="tv" onclick="switchCalTab('tv')">📉 TradingView</button>
         </div>
       </div>
     </div>
-    <div class="cal-controls">
-      <div class="cal-impact-filters">
-        <span class="cal-filter-label">Impact:</span>
-        <label class="cal-filter-check"><input type="checkbox" id="cal-impact-high" checked onchange="refreshCalendarFilters()"><span class="cal-chip high">🔴 High</span></label>
-        <label class="cal-filter-check"><input type="checkbox" id="cal-impact-medium" onchange="refreshCalendarFilters()"><span class="cal-chip medium">🟡 Medium</span></label>
-        <label class="cal-filter-check"><input type="checkbox" id="cal-impact-low" onchange="refreshCalendarFilters()"><span class="cal-chip low">🟢 Low</span></label>
+    <!-- Economic Calendar Tab -->
+    <div id="econ-cal-tab" class="cal-tab-content">
+      <div class="econ-cal-controls">
+        <div class="cal-impact-filters">
+          <span class="cal-filter-label">Impact:</span>
+          <label class="cal-filter-check"><input type="checkbox" id="econ-impact-high" checked onchange="renderEconCalendar()"><span class="cal-chip high">🔴 High</span></label>
+          <label class="cal-filter-check"><input type="checkbox" id="econ-impact-medium" checked onchange="renderEconCalendar()"><span class="cal-chip medium">🟡 Medium</span></label>
+          <label class="cal-filter-check"><input type="checkbox" id="econ-impact-low" onchange="renderEconCalendar()"><span class="cal-chip low">🟢 Low</span></label>
+        </div>
+        <div class="cal-impact-filters">
+          <span class="cal-filter-label">Country:</span>
+          <label class="cal-filter-check"><input type="checkbox" id="econ-country-usd" checked onchange="renderEconCalendar()"><span class="cal-chip">🇺🇸 USD</span></label>
+          <label class="cal-filter-check"><input type="checkbox" id="econ-country-eur" onchange="renderEconCalendar()"><span class="cal-chip">🇪🇺 EUR</span></label>
+          <label class="cal-filter-check"><input type="checkbox" id="econ-country-gbp" onchange="renderEconCalendar()"><span class="cal-chip">🇬🇧 GBP</span></label>
+          <label class="cal-filter-check"><input type="checkbox" id="econ-country-jpy" onchange="renderEconCalendar()"><span class="cal-chip">🇯🇵 JPY</span></label>
+          <label class="cal-filter-check"><input type="checkbox" id="econ-country-all" onchange="renderEconCalendar()"><span class="cal-chip">🌍 All</span></label>
+        </div>
+        <div class="cal-search-wrap">
+          <input type="text" id="econ-search-input" class="form-input cal-search-input" placeholder="🔍 Search events (e.g. CPI, GDP, Fed, NFP)…" oninput="renderEconCalendar()" />
+        </div>
       </div>
-      <div class="cal-search-wrap">
-        <input type="text" id="cal-search-input" class="form-input cal-search-input" placeholder="🔍 Search events (e.g. CPI, GDP, Fed)…" oninput="filterCalendarEvents(this.value)" />
+      <div id="econ-cal-table" class="econ-cal-table-wrap"></div>
+    </div>
+    <!-- TradingView Tab -->
+    <div id="tv-cal-tab" class="cal-tab-content" style="display:none">
+      <div class="cal-controls">
+        <div class="cal-impact-filters">
+          <span class="cal-filter-label">Impact:</span>
+          <label class="cal-filter-check"><input type="checkbox" id="cal-impact-high" checked onchange="refreshCalendarFilters()"><span class="cal-chip high">🔴 High</span></label>
+          <label class="cal-filter-check"><input type="checkbox" id="cal-impact-medium" onchange="refreshCalendarFilters()"><span class="cal-chip medium">🟡 Medium</span></label>
+          <label class="cal-filter-check"><input type="checkbox" id="cal-impact-low" onchange="refreshCalendarFilters()"><span class="cal-chip low">🟢 Low</span></label>
+        </div>
       </div>
+      <div class="tv-widget-container" id="tv-calendar-container"></div>
     </div>
-    <div id="cal-event-filter-bar" class="cal-event-filter-bar" style="display:none">
-      <span id="cal-filter-label-text"></span>
-      <button class="cal-clear-filter" onclick="clearCalendarSearch()">✕ Clear</button>
-    </div>
-    <div class="tv-widget-container" id="tv-calendar-container"></div>
   </section>
 
   <!-- MARKET SCREENER VIEW -->
@@ -377,10 +403,6 @@
   <section id="news-view" class="view">
   </section>
 
-  <!-- SAVED NEWS VIEW -->
-  <section id="saved-news-view" class="view">
-  </section>
-
   <!-- PROFILES VIEW -->
   <section id="profiles-view" class="view">
     <div class="view-header">
@@ -455,17 +477,6 @@
         <div id="sms-test-result" class="test-result"></div>
       </div>
       <!-- X Handles -->
-      <div class="settings-card">
-        <h3 class="settings-card-title">🐦 X / Twitter Accounts</h3>
-        <p class="settings-card-desc">Add X (Twitter) account handles to follow for real-time news in the Latest News view.</p>
-        <div id="x-handles-list"></div>
-        <div class="form-group" style="margin-top:12px">
-          <div style="display:flex;gap:8px">
-            <input type="text" class="form-input" id="new-x-handle" placeholder="@elonmusk" />
-            <button class="btn-secondary" onclick="addXHandle()">Add</button>
-          </div>
-        </div>
-      </div>
       <!-- Custom Feeds -->
       <div class="settings-card settings-card-wide">
         <h3 class="settings-card-title">🌐 Favorite Websites &amp; Feeds</h3>
@@ -487,25 +498,12 @@
             <label class="form-label" id="feed-url-label">URL</label>
             <input type="url" class="form-input" id="feed-url" placeholder="https://seekingalpha.com" />
           </div>
-          <div class="form-group" id="feed-credentials-group" style="display:none">
-            <label class="form-label">Login Email (optional)</label>
-            <input type="email" class="form-input" id="feed-login-email" placeholder="your@email.com" />
-            <label class="form-label" style="margin-top:6px">Password / API Key (optional)</label>
-            <input type="password" class="form-input" id="feed-login-password" placeholder="Saved locally only" />
-          </div>
           <div class="form-group">
             <label class="form-label">Notes (optional)</label>
             <input type="text" class="form-input" id="feed-notes" placeholder="e.g. great for macro analysis" />
           </div>
           <div class="btn-row">
             <button class="btn-secondary" onclick="addCustomFeed()">Add</button>
-            <label class="toggle-row" style="font-size:12px;margin:0">
-              <span class="form-label" style="margin:0">Save credentials</span>
-              <label class="toggle" style="transform:scale(.8)">
-                <input type="checkbox" id="feed-save-creds" onchange="toggleFeedCreds()" />
-                <span class="toggle-slider"></span>
-              </label>
-            </label>
           </div>
         </div>
       </div>

@@ -4,7 +4,7 @@ const state = {
   profiles: {}, hoverCache: {},
   view: 'dashboard', selectedSymbol: null, searchTimeout: null,
   dashViewMode: 'grid', cryptoViewMode: 'detailed', cryptoData: [],
-  cryptoEditMode: false, cryptoChartPeriod: '1d', cryptoCharts: {},
+  cryptoChartPeriod: '1d', cryptoCharts: {},
   hiddenCryptoIds: JSON.parse(localStorage.getItem('hiddenCryptoIds') || '[]'),
   pinnedCryptoIds: JSON.parse(localStorage.getItem('pinnedCryptoIds') || '[]'),
   favoriteCryptoIds: JSON.parse(localStorage.getItem('favoriteCryptoIds') || '[]'),
@@ -38,14 +38,23 @@ async function init() {
 
   // Load market index bar
   loadMarketIndex();
-  // Refresh every 30 seconds
-  setInterval(loadMarketIndex, 30000);
+  // Smart refresh: every 30s during market hours, every 5 min off-hours
+  function _smartMarketRefresh() {
+    loadMarketIndex();
+    const interval = isMarketHours() ? 30 * 1000 : 5 * 60 * 1000;
+    setTimeout(_smartMarketRefresh, interval);
+  }
+  setTimeout(_smartMarketRefresh, 30000);
 
   // Headline tickers
   initHeadlineTickers().then(() => {
     startTickerRotation('stock', 12);
     startTickerRotation('crypto', 12);
   });
+
+  // Refresh dashboard news every 5 minutes
+  setTimeout(loadDashboardNews, 4000);
+  setInterval(() => { dashNewsLoaded = false; loadDashboardNews(); }, 5 * 60 * 1000);
 
   // Background chart preloading: stocks every 30 min, crypto every 5 min
   setTimeout(_preloadStockCharts, 5000); // initial load after 5s
@@ -303,6 +312,30 @@ function updateLastCheck() {
   document.getElementById('last-check-time').textContent = 'Last check: ' + new Date().toLocaleTimeString();
 }
 
+/* ─── MARKET HOURS DETECTION ─────────────────────────────────── */
+function isMarketHours() {
+  const now = new Date();
+  // Convert to Eastern Time
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay(); // 0=Sun, 6=Sat
+  if (day === 0 || day === 6) return false;
+  const h = et.getHours(), m = et.getMinutes();
+  const mins = h * 60 + m;
+  // Pre-market starts 4:00 AM, regular 9:30 AM - 4:00 PM, after-hours until 8:00 PM
+  // For refresh purposes, consider 4:00 AM - 8:00 PM ET as "active" hours
+  return mins >= 240 && mins <= 1200; // 4:00 AM to 8:00 PM ET
+}
+
+function isRegularMarketHours() {
+  const now = new Date();
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  if (day === 0 || day === 6) return false;
+  const h = et.getHours(), m = et.getMinutes();
+  const mins = h * 60 + m;
+  return mins >= 570 && mins <= 960; // 9:30 AM to 4:00 PM ET
+}
+
 /* ─── API ─────────────────────────────────────────────────────── */
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -311,6 +344,13 @@ async function api(method, path, body) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+/* ─── SIDEBAR NAV GROUPS ─────────────────────────────────────── */
+function toggleNavGroup(label) {
+  label.classList.toggle('collapsed');
+  const group = label.nextElementSibling;
+  if (group) group.classList.toggle('collapsed');
 }
 
 /* ─── NAVIGATION ──────────────────────────────────────────────── */
@@ -325,11 +365,10 @@ function navigate(view) {
     case 'alerts': renderAlerts(); break;
     case 'history': renderHistory(); break;
     case 'news': renderLatestNews(); break;
-    case 'saved-news': renderSavedNews(); break;
     case 'profiles': renderProfiles(); break;
     case 'sectors': renderSectors(); break;
     case 'maps': initTVMaps(); break;
-    case 'calendar': initTVCalendar(); break;
+    case 'calendar': loadEconCalendar(); break;
     case 'screener': initTVScreener(); break;
     case 'tradingview': initTVTradingView(); break;
     case 'crypto': renderCryptoDashboard(); break;
@@ -1092,7 +1131,7 @@ function updateStockCard(symbol) {
    ─────────────────────────────────────────────────────────────── */
 const _hoverTimers = new WeakMap();
 function _scheduleShow(cardEl, showFn, delay = 500) {
-  if (editMode || state.cryptoEditMode) return; // suppress popups during edit mode
+  if (editMode) return; // suppress popups during edit mode
   let t = _hoverTimers.get(cardEl) || {};
   clearTimeout(t.hide); t.hide = null;
   if (!t.show) t.show = setTimeout(() => { t.show = null; _hoverTimers.set(cardEl, t); showFn(); }, delay);
@@ -2993,41 +3032,84 @@ function renderNewsItems() {
 
 /* ─── DASHBOARD NEWS (below stock grid) ──────────────────────── */
 let dashNewsLoaded = false;
+let _dashNewsCache = [];
 
 async function loadDashboardNews() {
   const container = document.getElementById('dashboard-news');
   if (!container) return;
-  if (dashNewsLoaded && container.innerHTML) return;
+
+  // If already loaded with content, don't re-fetch (refresh via interval)
+  if (dashNewsLoaded && _dashNewsCache.length && container.innerHTML) return;
 
   try {
-    const watchedSymbols = [...new Set(state.alerts.map(a => a.symbol)), ...newsCustomSymbols].join(',');
-    const url = `/news/latest${watchedSymbols ? '?symbols=' + encodeURIComponent(watchedSymbols) : ''}`;
-    const data = await api('GET', url);
-    dashNewsLoaded = true;
-    const items = data.slice(0, 12);
-    if (!items.length) { container.innerHTML = ''; return; }
+    // Try primary endpoint first
+    let items = [];
+    try {
+      const watchedSymbols = [...new Set(state.alerts.map(a => a.symbol)), ...newsCustomSymbols].join(',');
+      const url = `/news/latest${watchedSymbols ? '?symbols=' + encodeURIComponent(watchedSymbols) : ''}`;
+      const data = await api('GET', url);
+      items = Array.isArray(data) ? data.slice(0, 12) : [];
+    } catch(e) { /* primary failed, try fallback */ }
+
+    // Fallback: use RSS endpoint directly if primary gave nothing
+    if (!items.length) {
+      try {
+        const rss = await api('GET', '/news/rss');
+        items = Array.isArray(rss) ? rss.slice(0, 12) : [];
+      } catch(e2) { /* silent */ }
+    }
+
+    // Fallback 2: use crypto news if still empty
+    if (!items.length) {
+      try {
+        const crypto = await api('GET', '/crypto/news');
+        items = Array.isArray(crypto) ? crypto.slice(0, 12) : [];
+      } catch(e3) { /* silent */ }
+    }
+
+    // Update cache only if we got items
+    if (items.length) {
+      _dashNewsCache = items;
+      dashNewsLoaded = true;
+    }
+
+    // Always render from cache (never leave empty)
+    const renderItems = _dashNewsCache.length ? _dashNewsCache : items;
+    if (!renderItems.length) {
+      container.innerHTML = `<div class="dashboard-news-header"><h3>Latest Market News</h3></div><div style="padding:16px;color:var(--text-dim);font-size:13px">Loading headlines… please wait a moment.</div>`;
+      // Retry in 15 seconds if empty
+      setTimeout(() => { dashNewsLoaded = false; loadDashboardNews(); }, 15000);
+      return;
+    }
+
     container.innerHTML = `
       <div class="dashboard-news-header">
         <h3>Latest Market News</h3>
         <button class="btn-sm" onclick="navigate('news')">View All →</button>
       </div>
       <div class="dashboard-news-grid">
-        ${items.map(n => {
-          const date = n.publishedAt ? new Date(n.publishedAt).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+        ${renderItems.map(n => {
+          const date = (n.publishedAt || n.pubDate) ? new Date(n.publishedAt || n.pubDate).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
           const src = n.source || n.publisher || '';
           const srcClass = src.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-            const ageHours = n.publishedAt ? (Date.now() - new Date(n.publishedAt).getTime()) / 3600000 : Infinity;
+          const ageHours = (n.publishedAt || n.pubDate) ? (Date.now() - new Date(n.publishedAt || n.pubDate).getTime()) / 3600000 : Infinity;
           const freshDot = ageHours < 1 ? '<span class="dash-fresh-dot"></span>' : '';
           const cats = n.categories || [];
           const breaking = cats.includes('breaking') ? ' dash-news-breaking' : cats.includes('portfolio') ? ' dash-news-portfolio' : '';
           return `<div class="dash-news-card${breaking}">
-            <div class="dash-news-top"><span class="dash-news-source ${srcClass}">${src}</span>${freshDot}${buildNewsActionBtns(n.title, n.link, src, n.publishedAt)}</div>
-            <div class="dash-news-title"><a href="${n.link}" target="_blank" rel="noopener" onclick="recordNewsClick('${(n.title||'').slice(0,30).replace(/'/g,"\\'")}')">${n.title}</a></div>
+            <div class="dash-news-top"><span class="dash-news-source ${srcClass}">${src}</span>${freshDot}${buildNewsActionBtns(n.title, n.link, src, n.publishedAt || n.pubDate)}</div>
+            <div class="dash-news-title"><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a></div>
             <div class="dash-news-meta">${date}</div>
           </div>`;
         }).join('')}
       </div>`;
-  } catch (e) { /* silent fail */ }
+  } catch (e) {
+    // On error, still show cached data if available
+    if (_dashNewsCache.length) {
+      dashNewsLoaded = true;
+      loadDashboardNews();
+    }
+  }
 }
 
 /* ─── CRYPTO DASHBOARD ───────────────────────────────────────── */
@@ -3094,37 +3176,49 @@ function toggleCryptoPin(id) {
   renderCryptoDashboard();
 }
 
+let _cryptoNewsCache = [];
+
 async function loadCryptoNews() {
   const section = document.getElementById('crypto-news-section');
   if (!section) return;
-  if (section.dataset.loaded && (Date.now() - parseInt(section.dataset.loaded)) < 10 * 60 * 1000) return;
-  section.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px">Loading crypto news…</div>';
+  // Skip if loaded recently AND has content
+  if (section.dataset.loaded && _cryptoNewsCache.length && (Date.now() - parseInt(section.dataset.loaded)) < 5 * 60 * 1000) return;
+
+  if (!_cryptoNewsCache.length) {
+    section.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px">Loading crypto news…</div>';
+  }
+
   try {
     const articles = await api('GET', '/crypto/news');
-    section.dataset.loaded = Date.now().toString();
-    if (!articles || !articles.length) {
-      section.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px">No news available.</div>';
-      return;
+    if (Array.isArray(articles) && articles.length) {
+      _cryptoNewsCache = articles;
     }
-    section.innerHTML = `
-      <div class="news-section-header">
-        <span class="news-section-title">📰 Crypto News</span>
-        <button class="btn-sm" onclick="refreshCryptoNews()">↻ Refresh</button>
-      </div>
-      <div class="news-articles-grid">
-        ${articles.map(a => `
-          <div class="news-article-item">
-            <div class="news-article-top">
-              <div class="news-article-source">${a.source}</div>
-              ${buildNewsActionBtns(a.title, a.link, a.source, a.pubDate)}
-            </div>
-            <a class="news-article-link" href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
-            <div class="news-article-date">${a.pubDate ? new Date(a.pubDate).toLocaleDateString('en-US', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}</div>
-          </div>`).join('')}
-      </div>`;
-  } catch (e) {
-    section.innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px">Failed to load news: ${e.message}</div>`;
+  } catch(e) { /* use cache */ }
+
+  section.dataset.loaded = Date.now().toString();
+  const articles = _cryptoNewsCache;
+  if (!articles.length) {
+    section.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px">Loading crypto news…</div>';
+    setTimeout(() => { section.dataset.loaded = '0'; loadCryptoNews(); }, 20000);
+    return;
   }
+
+  section.innerHTML = `
+    <div class="news-section-header">
+      <span class="news-section-title">📰 Crypto News</span>
+      <button class="btn-sm" onclick="refreshCryptoNews()">↻ Refresh</button>
+    </div>
+    <div class="news-articles-grid">
+      ${articles.map(a => `
+        <div class="news-article-item">
+          <div class="news-article-top">
+            <div class="news-article-source">${a.source}</div>
+            ${buildNewsActionBtns(a.title, a.link, a.source, a.pubDate || a.publishedAt)}
+          </div>
+          <a class="news-article-link" href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+          <div class="news-article-date">${(a.pubDate || a.publishedAt) ? new Date(a.pubDate || a.publishedAt).toLocaleDateString('en-US', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}</div>
+        </div>`).join('')}
+    </div>`;
 }
 
 function refreshCryptoNews() {
@@ -3142,16 +3236,12 @@ function buildCryptoCard(c) {
   const spark = (c.sparkline||[]).length > 30 ? c.sparkline.filter((_, i) => i % Math.ceil(c.sparkline.length / 30) === 0) : (c.sparkline||[]);
   const sparkSvg = buildSparklineSVG(spark, 120, 30, '#77DD77', '#FF6B6B');
   const isFav = state.favoriteCryptoIds?.includes(c.id);
-  const deleteBtn = state.cryptoEditMode
-    ? `<button class="card-delete-btn" onclick="event.stopPropagation();hideCryptoCoin('${c.id}')" title="Hide coin">✕</button>`
-    : '';
 
   return `
     <div class="crypto-card ${dir}" style="position:relative"
-         onclick="showCryptoDetailPopup('${c.id}')"
+         onclick="openCryptoDetailModal('${c.id}')"
          onmouseenter="_scheduleShow(this,()=>showCryptoHover('${c.id}',this))"
          onmouseleave="_scheduleHide(this,()=>hideCryptoHover(this))">
-      ${deleteBtn}
       <button class="crypto-star-btn card-star${isFav ? ' starred' : ''}"
         onclick="event.stopPropagation();toggleCryptoFavorite('${c.id}')"
         title="${isFav ? 'Remove from favorites' : 'Add to favorites'}"></button>
@@ -3277,130 +3367,6 @@ async function loadCryptoPopupChart(id, range, btnEl, popupId) {
       <span>${last >= 1 ? '$' + last.toLocaleString('en-US',{maximumFractionDigits:2}) : '$' + last.toFixed(6)}</span>
     </div>`;
   } catch (e) { chartEl.innerHTML = '<div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">—</div>'; }
-}
-
-/* ─── CRYPTO DETAIL POPUP (click crypto card) ────────────────── */
-async function showCryptoDetailPopup(id) {
-  const modal = document.getElementById('stock-detail-modal');
-  const titleEl = document.getElementById('stock-detail-modal-title');
-  const bodyEl = document.getElementById('stock-detail-modal-body');
-  if (!modal) return;
-  const c = state.cryptoData.find(x => x.id === id);
-  if (!c) return;
-
-  titleEl.textContent = `₿ ${c.symbol} — ${c.name} Full Details`;
-  bodyEl.innerHTML = '<div class="hover-loading" style="padding:24px">Loading crypto details…</div>';
-  modal.classList.add('active');
-  document.body.style.overflow = 'hidden';
-
-  const priceStr = cryptoPriceFmt(c.price);
-  const mcap = c.marketCap ? fmtVol(c.marketCap) : '—';
-  const vol = c.volume24h ? fmtVol(c.volume24h) : '—';
-  const dir = (c.change24h || 0) >= 0 ? 'up' : 'down';
-  const chg = c.change24h != null ? `${c.change24h >= 0 ? '+' : ''}${c.change24h.toFixed(2)}%` : '—';
-
-  // Build chart section using CryptoCompare data
-  const popupId = `cpopup-${id}`;
-  const PERIODS = [
-    { label: '1D', range: '1d' }, { label: '7D', range: '7d' },
-    { label: '1M', range: '30d' }, { label: '3M', range: '90d' },
-    { label: '1Y', range: '365d' },
-  ];
-
-  bodyEl.innerHTML = `
-    <div class="detail-header" style="padding:16px 20px 0">
-      <div style="display:flex;align-items:center;gap:12px">
-        <img src="${c.image}" style="width:40px;height:40px;border-radius:50%" onerror="this.style.display='none'" />
-        <div>
-          <div class="detail-symbol" style="font-size:22px">${c.symbol}</div>
-          <div class="detail-name">${c.name} · Rank #${c.rank || '—'}</div>
-        </div>
-      </div>
-      <div style="text-align:right">
-        <div class="detail-price" style="font-size:22px">${priceStr}</div>
-        <div class="detail-change ${dir}" style="font-size:14px">${chg} (24h)</div>
-      </div>
-    </div>
-    <div class="perf-bar" style="padding:8px 20px">
-      ${[['1H', c.change1h], ['24H', c.change24h], ['7D', c.change7d], ['30D', c.change30d], ['1Y', c.change1y]].map(([l, v]) => {
-        if (v == null) return '';
-        const d = v >= 0 ? 'up' : 'down';
-        return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span></div>`;
-      }).join('')}
-    </div>
-    <div class="chart-period-buttons" id="${popupId}-periods" style="padding:0 20px 8px">
-      ${PERIODS.map(p => `<button class="chart-period-btn${p.range === '7d' ? ' active' : ''}" onclick="event.stopPropagation();loadCryptoPopupChart('${id}','${p.range}',this,'${popupId}')">${p.label}</button>`).join('')}
-    </div>
-    <div class="hover-popup-chart-wrap" id="${popupId}-chart" style="margin:0 20px 8px;height:120px">
-      <div style="height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading chart…</div>
-    </div>
-    <div class="hover-stats-grid" style="margin:0 20px 12px">
-      <div class="hover-stat"><span class="hover-stat-label">Market Cap</span><span class="hover-stat-value">${mcap}</span></div>
-      <div class="hover-stat"><span class="hover-stat-label">Volume 24H</span><span class="hover-stat-value">${vol}</span></div>
-      <div class="hover-stat"><span class="hover-stat-label">ATH</span><span class="hover-stat-value">${cryptoPriceFmt(c.ath)}</span></div>
-      <div class="hover-stat"><span class="hover-stat-label">ATH Change</span><span class="hover-stat-value" style="color:var(--red)">${c.athChangePercent != null ? c.athChangePercent.toFixed(1) + '%' : '—'}</span></div>
-      <div class="hover-stat"><span class="hover-stat-label">52W High</span><span class="hover-stat-value">${c.high52w ? cryptoPriceFmt(c.high52w) : '—'}</span></div>
-      <div class="hover-stat"><span class="hover-stat-label">Circulating</span><span class="hover-stat-value">${c.circulatingSupply ? fmtVol(c.circulatingSupply) : '—'}</span></div>
-    </div>`;
-  // Load default 7D chart
-  loadCryptoPopupChart(id, '7d', bodyEl.querySelector('.chart-period-btn.active'), popupId);
-}
-
-/* ─── CRYPTO EDIT MODE ───────────────────────────────────────── */
-function toggleCryptoEditMode() {
-  state.cryptoEditMode = !state.cryptoEditMode;
-  const btn = document.getElementById('crypto-edit-mode-btn');
-  const grid = document.getElementById('crypto-grid');
-  if (btn) { btn.classList.toggle('active-edit', state.cryptoEditMode); btn.textContent = state.cryptoEditMode ? '✅ Done' : '✏️ Edit'; }
-  if (state.cryptoEditMode) {
-    // Close any open popups immediately
-    document.querySelectorAll('.popup-open').forEach(c => c.classList.remove('popup-open'));
-    document.querySelectorAll('.crypto-hover-popup.visible').forEach(p => p.classList.remove('visible'));
-    if (grid) grid.classList.add('edit-mode');
-  } else {
-    if (grid) grid.classList.remove('edit-mode');
-    document.querySelectorAll('.crypto-compact-card, .crypto-card, #crypto-grid .lcw-row').forEach(c => {
-      c.draggable = false; c.classList.remove('dragging', 'drag-over');
-    });
-    document.querySelectorAll('#crypto-grid .card-delete-btn').forEach(b => b.remove());
-  }
-  renderCryptoDashboard();
-  if (state.cryptoEditMode) {
-    _addCryptoEditDragHandlers();
-    if (grid) grid.classList.add('edit-mode'); // re-add after re-render
-  }
-}
-
-function _addCryptoEditDragHandlers() {
-  const mode = state.cryptoViewMode;
-  const sel = mode === 'heatmap' ? null : mode === 'detailed' ? '.lcw-row' : '.crypto-card';
-  if (!sel) return;
-  const grid = document.getElementById('crypto-grid');
-  if (!grid) return;
-  grid.querySelectorAll(sel).forEach(card => {
-    card.draggable = true;
-    card.addEventListener('dragstart', _cryptoDragStart);
-    card.addEventListener('dragover', _cryptoDragOver);
-    card.addEventListener('dragleave', _cryptoDragLeave);
-    card.addEventListener('drop', _cryptoDrop);
-    card.addEventListener('dragend', _cryptoDragEnd);
-  });
-}
-
-let _cryptoDragSrc = null;
-function _cryptoDragStart(e) { _cryptoDragSrc = this; this.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
-function _cryptoDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; this.classList.add('drag-over'); }
-function _cryptoDragLeave() { this.classList.remove('drag-over'); }
-function _cryptoDragEnd() { this.classList.remove('dragging', 'drag-over'); document.querySelectorAll('.drag-over').forEach(c => c.classList.remove('drag-over')); }
-function _cryptoDrop(e) {
-  e.stopPropagation(); e.preventDefault();
-  this.classList.remove('drag-over');
-  if (_cryptoDragSrc === this) return;
-  const parent = _cryptoDragSrc.parentNode;
-  const all = [...parent.children].filter(c => c !== parent.querySelector('.lcw-header'));
-  const srcIdx = all.indexOf(_cryptoDragSrc), tgtIdx = all.indexOf(this);
-  if (srcIdx < tgtIdx) parent.insertBefore(_cryptoDragSrc, this.nextSibling);
-  else parent.insertBefore(_cryptoDragSrc, this);
 }
 
 function hideCryptoCoin(id) {
@@ -4318,6 +4284,136 @@ document.addEventListener('click', function(e) {
     if (menu) menu.classList.remove('open');
   }
 });
+
+/* ─── ECONOMIC CALENDAR (Finviz-style) ─────────────────────── */
+let _econCalData = [];
+let _econCalLoaded = false;
+
+const COUNTRY_FLAGS = {
+  USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', CAD: '🇨🇦', AUD: '🇦🇺',
+  NZD: '🇳🇿', CHF: '🇨🇭', CNY: '🇨🇳', KRW: '🇰🇷', INR: '🇮🇳', BRL: '🇧🇷',
+};
+
+async function loadEconCalendar() {
+  try {
+    const data = await api('GET', '/economic-calendar');
+    if (Array.isArray(data) && data.length) {
+      _econCalData = data;
+      _econCalLoaded = true;
+    }
+  } catch(e) { console.warn('Econ calendar load failed:', e.message); }
+  renderEconCalendar();
+}
+
+function renderEconCalendar() {
+  const container = document.getElementById('econ-cal-table');
+  if (!container) return;
+
+  if (!_econCalLoaded) {
+    container.innerHTML = '<div style="padding:24px;color:var(--text-dim);text-align:center">Loading economic calendar…</div>';
+    return;
+  }
+
+  // Read filters
+  const showHigh = document.getElementById('econ-impact-high')?.checked ?? true;
+  const showMedium = document.getElementById('econ-impact-medium')?.checked ?? true;
+  const showLow = document.getElementById('econ-impact-low')?.checked ?? false;
+  const showUSD = document.getElementById('econ-country-usd')?.checked ?? true;
+  const showEUR = document.getElementById('econ-country-eur')?.checked ?? false;
+  const showGBP = document.getElementById('econ-country-gbp')?.checked ?? false;
+  const showJPY = document.getElementById('econ-country-jpy')?.checked ?? false;
+  const showAll = document.getElementById('econ-country-all')?.checked ?? false;
+  const searchQ = (document.getElementById('econ-search-input')?.value || '').toLowerCase().trim();
+
+  const allowedCountries = new Set();
+  if (showAll) {
+    Object.keys(COUNTRY_FLAGS).forEach(c => allowedCountries.add(c));
+    // Also allow any not in map
+    _econCalData.forEach(e => allowedCountries.add(e.country));
+  } else {
+    if (showUSD) allowedCountries.add('USD');
+    if (showEUR) allowedCountries.add('EUR');
+    if (showGBP) allowedCountries.add('GBP');
+    if (showJPY) allowedCountries.add('JPY');
+  }
+
+  const impactFilter = new Set();
+  if (showHigh) impactFilter.add('High');
+  if (showMedium) impactFilter.add('Medium');
+  if (showLow) { impactFilter.add('Low'); impactFilter.add('Holiday'); }
+
+  // Filter events
+  let events = _econCalData.filter(e => {
+    if (!allowedCountries.has(e.country)) return false;
+    if (!impactFilter.has(e.impact)) return false;
+    if (searchQ && !(e.title || '').toLowerCase().includes(searchQ) && !(e.country || '').toLowerCase().includes(searchQ)) return false;
+    return true;
+  });
+
+  if (!events.length) {
+    container.innerHTML = '<div style="padding:24px;color:var(--text-dim);text-align:center">No events match your filters. Try adjusting the impact or country filters.</div>';
+    return;
+  }
+
+  // Group by day
+  const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+  const dayGroups = {};
+  events.forEach(e => {
+    const d = new Date(e.date);
+    const dayKey = d.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    if (!dayGroups[dayKey]) dayGroups[dayKey] = [];
+    dayGroups[dayKey].push(e);
+  });
+
+  let html = `<table class="econ-cal-table">
+    <thead><tr>
+      <th style="width:70px">Time</th>
+      <th style="width:50px">Ctry</th>
+      <th style="width:30px"></th>
+      <th>Event</th>
+      <th style="width:80px;text-align:right">Forecast</th>
+      <th style="width:80px;text-align:right">Previous</th>
+    </tr></thead><tbody>`;
+
+  for (const [day, evts] of Object.entries(dayGroups)) {
+    const isToday = day === new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    html += `<tr class="econ-cal-day-row${isToday ? ' today' : ''}"><td colspan="6">${isToday ? '📍 ' : ''}${day}</td></tr>`;
+
+    evts.forEach(e => {
+      const d = new Date(e.date);
+      const time = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true });
+      const flag = COUNTRY_FLAGS[e.country] || '🏳️';
+      const impactClass = (e.impact || 'low').toLowerCase();
+      const isHoliday = e.impact === 'Holiday';
+      const forecast = e.forecast || '—';
+      const previous = e.previous || '—';
+
+      html += `<tr class="${isHoliday ? 'econ-holiday-row' : ''}">
+        <td><span class="econ-time">${isHoliday ? 'All Day' : time}</span></td>
+        <td><span class="econ-country-flag">${flag}</span>${e.country}</td>
+        <td><span class="econ-impact ${impactClass}" title="${e.impact} Impact"></span></td>
+        <td><span class="econ-event-name">${e.title}</span></td>
+        <td style="text-align:right"><span class="econ-val neutral">${forecast}</span></td>
+        <td style="text-align:right"><span class="econ-val neutral">${previous}</span></td>
+      </tr>`;
+    });
+  }
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  // Update subtitle
+  const subtitle = document.getElementById('econ-cal-subtitle');
+  if (subtitle) subtitle.textContent = `${events.length} events · ${Object.keys(dayGroups).length} days`;
+}
+
+function switchCalTab(tab) {
+  document.querySelectorAll('#cal-tab-switcher .cal-period-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('econ-cal-tab').style.display = tab === 'econ' ? '' : 'none';
+  document.getElementById('tv-cal-tab').style.display = tab === 'tv' ? '' : 'none';
+  if (tab === 'econ' && !_econCalLoaded) loadEconCalendar();
+  if (tab === 'tv') initTVCalendar();
+}
 
 let _calPeriod = 'week';
 function setCalendarPeriod(range) {
