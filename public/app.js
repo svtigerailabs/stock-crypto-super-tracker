@@ -1,3 +1,14 @@
+/* ─── HTML ESCAPE UTILITY ─────────────────────────────────────── */
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /* ─── STATE ───────────────────────────────────────────────────── */
 const state = {
   alerts: [], stocks: {}, history: [], settings: {},
@@ -612,11 +623,11 @@ function renderTickerMarquee(type) {
       return;
     }
     const makeItems = (list) => list.map(art => {
-      const src = art.source ? `[${art.source}] ` : '';
-      const url = art.link || '#';
+      const src = art.source ? `[${escHtml(art.source)}] ` : '';
+      const url = escHtml(art.link || '#');
       return `<a class="ticker-item" href="${url}" target="_blank" rel="noopener noreferrer">` +
         `<span class="ticker-meta">${src}</span>` +
-        `<span class="ticker-title">${art.title || ''}</span>` +
+        `<span class="ticker-title">${escHtml(art.title || '')}</span>` +
         `</a><span class="ticker-sep">◆</span>`;
     }).join('');
     const top3 = articles.slice(0, 3);
@@ -650,16 +661,16 @@ function renderTickerMarquee(type) {
   }
 
   const buildNewsItems = () => articles.map(art => {
-    const src = art.source ? `[${art.source}]` : '';
+    const src = art.source ? `[${escHtml(art.source)}]` : '';
     let timeStr = '';
     if (art.publishedAt) {
       const d = new Date(art.publishedAt);
       timeStr = ` · ${d.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}`;
     }
-    const url = art.link || '#';
+    const url = escHtml(art.link || '#');
     return `<a class="ticker-item" href="${url}" target="_blank" rel="noopener noreferrer">` +
       `<span class="ticker-meta">${src}${timeStr}</span>` +
-      `<span class="ticker-title">${art.title || ''}</span>` +
+      `<span class="ticker-title">${escHtml(art.title || '')}</span>` +
       `</a><span class="ticker-sep">◆</span>`;
   }).join('');
 
@@ -1336,7 +1347,7 @@ function renderHoverPopup(symbol, el) {
   const newsHtml = topNewsSlice.length ? `
     <div class="hover-news-section">
       <div class="hover-news-title">Latest Headlines</div>
-      ${topNewsSlice.map(n => `<div class="hover-news-item"><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a><div class="hover-news-pub">${n.publisher || ''}</div></div>`).join('')}
+      ${topNewsSlice.map(n => `<div class="hover-news-item"><a href="${escHtml(n.link)}" target="_blank" rel="noopener">${escHtml(n.title)}</a><div class="hover-news-pub">${escHtml(n.publisher || '')}</div></div>`).join('')}
       ${(p.topNews || []).length > 5 ? `<div style="padding:4px 0;font-size:12px"><a href="#" style="color:var(--blue);text-decoration:none" onclick="event.stopPropagation();showNewsModal('${symbol}');return false">📰 View all ${p.topNews.length} headlines →</a></div>` : ''}
     </div>` : '';
 
@@ -1840,7 +1851,7 @@ async function loadRightPanel(symbol) {
       }).join('')}</div>` : '';
 
     // News (scrollable, all articles)
-    const newsHtml = (p.topNews || []).map(n => `<div class="profile-news-item"><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a><div class="profile-news-pub">${n.publisher || ''} · ${n.publishedAt ? new Date(n.publishedAt).toLocaleDateString() : ''}</div></div>`).join('');
+    const newsHtml = (p.topNews || []).map(n => `<div class="profile-news-item"><a href="${escHtml(n.link)}" target="_blank" rel="noopener">${escHtml(n.title)}</a><div class="profile-news-pub">${escHtml(n.publisher || '')} · ${n.publishedAt ? new Date(n.publishedAt).toLocaleDateString() : ''}</div></div>`).join('');
 
     const stat = (label, val) => `<div class="profile-stat"><span class="profile-stat-label">${label}</span><span class="profile-stat-value">${val || '—'}</span></div>`;
 
@@ -2412,7 +2423,7 @@ async function showNewsModal(symbol) {
     bodyEl.innerHTML = headerHtml + news.map(n => {
       const date = n.publishedAt ? new Date(n.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
       const thumb = n.thumbnail ? `<img class="news-thumb" src="${n.thumbnail}" alt="" onerror="this.style.display='none'" />` : '';
-      return `<div class="news-item">${thumb}<div class="news-content"><div class="news-title"><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a></div><div class="news-meta"><span class="news-publisher">${n.publisher || ''}</span><span>${date}</span></div></div></div>`;
+      return `<div class="news-item">${thumb}<div class="news-content"><div class="news-title"><a href="${escHtml(n.link)}" target="_blank" rel="noopener">${escHtml(n.title)}</a></div><div class="news-meta"><span class="news-publisher">${escHtml(n.publisher || '')}</span><span>${date}</span></div></div></div>`;
     }).join('');
   } catch (e) {
     bodyEl.innerHTML = `<div class="news-empty">Failed to load news: ${e.message}</div>`;
@@ -2730,10 +2741,10 @@ function renderSavedNews() {
         return `
           <div class="latest-news-item">
             <div class="latest-news-top">
-              <span class="latest-news-source">${n.source || ''}</span>
+              <span class="latest-news-source">${escHtml(n.source || '')}</span>
               <span style="font-size:10px;color:var(--text-dim)">${pubDate}</span>
             </div>
-            <div class="latest-news-title"><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a></div>
+            <div class="latest-news-title"><a href="${escHtml(n.link)}" target="_blank" rel="noopener">${escHtml(n.title)}</a></div>
             <div class="latest-news-time">${date}</div>
             ${buildNewsActionBtns(n.title, n.link, n.source, n.pubDate)}
           </div>`;
@@ -3063,10 +3074,10 @@ function renderCryptoNewsViewList() {
     const freshDot = ageHours < 1 ? '<span class="nl-live" style="margin-right:2px">LIVE</span>' : '';
     const isX = (a.source || '').startsWith('X @');
     const srcLabel = isX
-      ? `<span class="nl-src" style="background:rgba(200,200,200,.1);color:#ccc">𝕏 ${a.source.replace('X @', '@')}</span>`
-      : `<span class="nl-src">${a.source || 'News'}</span>`;
+      ? `<span class="nl-src" style="background:rgba(200,200,200,.1);color:#ccc">𝕏 ${escHtml(a.source.replace('X @', '@'))}</span>`
+      : `<span class="nl-src">${escHtml(a.source || 'News')}</span>`;
     return `<div class="nl-item">
-      ${srcLabel}${freshDot}<a class="nl-title" href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+      ${srcLabel}${freshDot}<a class="nl-title" href="${escHtml(a.link)}" target="_blank" rel="noopener">${escHtml(a.title)}</a>
       <span class="nl-time">${timeStr}</span>
     </div>`;
   }).join('');
@@ -3189,8 +3200,8 @@ function renderNewsItems() {
     const catsAttr = cats.length ? `['${cats.join("','")}']` : '[]';
 
     return `<div class="nl-item${breaking ? ' nl-breaking' : portfolio ? ' nl-portfolio' : ''}">
-      <span class="nl-src ${srcClass}">${srcDisplay}</span>${freshDot}${n.relatedSymbol ? `<button class="news-sym-pill" onclick="showNewsModal('${n.relatedSymbol}')">${n.relatedSymbol}</button>` : ''}
-      <a class="nl-title" href="${n.link}" target="_blank" rel="noopener" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${catsAttr})">${n.title}</a>
+      <span class="nl-src ${srcClass}">${escHtml(srcDisplay)}</span>${freshDot}${n.relatedSymbol ? `<button class="news-sym-pill" onclick="showNewsModal('${escHtml(n.relatedSymbol)}')">${escHtml(n.relatedSymbol)}</button>` : ''}
+      <a class="nl-title" href="${escHtml(n.link)}" target="_blank" rel="noopener" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${catsAttr})">${escHtml(n.title)}</a>
       <span class="nl-time">${timeStr}</span>
     </div>`;
   }).join('');
@@ -3263,8 +3274,8 @@ async function loadDashboardNews() {
           const cats = n.categories || [];
           const breaking = cats.includes('breaking') ? ' dash-news-breaking' : cats.includes('portfolio') ? ' dash-news-portfolio' : '';
           return `<div class="dash-news-card${breaking}">
-            <div class="dash-news-top"><span class="dash-news-source ${srcClass}">${src}</span>${freshDot}${buildNewsActionBtns(n.title, n.link, src, n.publishedAt || n.pubDate)}</div>
-            <div class="dash-news-title"><a href="${n.link}" target="_blank" rel="noopener">${n.title}</a></div>
+            <div class="dash-news-top"><span class="dash-news-source ${srcClass}">${escHtml(src)}</span>${freshDot}${buildNewsActionBtns(n.title, n.link, src, n.publishedAt || n.pubDate)}</div>
+            <div class="dash-news-title"><a href="${escHtml(n.link)}" target="_blank" rel="noopener">${escHtml(n.title)}</a></div>
             <div class="dash-news-meta">${date}</div>
           </div>`;
         }).join('')}
@@ -3436,15 +3447,15 @@ function renderCryptoNewsCards() {
     const freshDot = ageHours < 1 ? '<span class="crypto-news-fresh-dot"></span>' : '';
     const isX = (a.source || '').startsWith('X @');
     const srcLabel = isX
-      ? `<span class="crypto-news-src-label x-label">𝕏 ${a.source.replace('X @', '@')}</span>`
-      : `<span class="crypto-news-src-label">${a.source || 'News'}</span>`;
+      ? `<span class="crypto-news-src-label x-label">𝕏 ${escHtml(a.source.replace('X @', '@'))}</span>`
+      : `<span class="crypto-news-src-label">${escHtml(a.source || 'News')}</span>`;
     return `<div class="crypto-news-card">
       <div class="crypto-news-card-source">
         ${srcLabel}
         <span class="crypto-news-card-time">${freshDot}${date}</span>
       </div>
       <div class="crypto-news-card-title">
-        <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+        <a href="${escHtml(a.link)}" target="_blank" rel="noopener">${escHtml(a.title)}</a>
       </div>
     </div>`;
   }).join('');
@@ -4288,8 +4299,8 @@ async function _showSectorPopup(anchorEl, symbol, name) {
     nl.innerHTML = news.length
       ? news.slice(0, 5).map(n => `
           <div class="snp-news-item">
-            <a href="${n.link || n.url}" target="_blank" rel="noopener">${n.title}</a>
-            <span class="snp-news-meta">${n.source || n.publisher || ''}</span>
+            <a href="${escHtml(n.link || n.url)}" target="_blank" rel="noopener">${escHtml(n.title)}</a>
+            <span class="snp-news-meta">${escHtml(n.source || n.publisher || '')}</span>
           </div>`).join('')
       : '<div class="snp-loading">No recent news</div>';
   } catch {
@@ -4636,7 +4647,7 @@ function renderEconCalendar() {
         <td><span class="econ-time">${isHoliday ? 'All Day' : time}</span></td>
         <td><span class="econ-country-flag">${flag}</span>${e.country}</td>
         <td><span class="econ-impact ${impactClass}" title="${e.impact} Impact"></span></td>
-        <td><span class="econ-event-name">${e.title}</span></td>
+        <td><span class="econ-event-name">${escHtml(e.title)}</span></td>
         <td style="text-align:right"><span class="econ-val neutral">${forecast}</span></td>
         <td style="text-align:right"><span class="econ-val neutral">${previous}</span></td>
       </tr>`;

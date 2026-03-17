@@ -809,6 +809,23 @@ async function yfFinancials(symbol) {
   return result;
 }
 
+// ── HTML entity decoding for RSS titles ──
+function decodeHtmlEntities(str) {
+  if (!str) return '';
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/<[^>]+>/g, ''); // strip any remaining HTML tags
+}
+
 // ── RSS news parsing (CNBC, Bloomberg) ──
 const rssCache = { data: null, fetchedAt: 0 };
 const RSS_CACHE_TTL = 20 * 60 * 1000; // 20 min (background refresh keeps it fresh)
@@ -819,7 +836,8 @@ function parseRSS(xml, sourceName) {
   let match;
   while ((match = itemRegex.exec(xml)) !== null) {
     const block = match[1];
-    const title = block.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/)?.[1]?.trim() || '';
+    const titleRaw = block.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/)?.[1]?.trim() || '';
+    const title = decodeHtmlEntities(titleRaw);
     const link = block.match(/<link>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/link>/)?.[1]?.trim() || '';
     const pubDate = block.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim() || '';
     const desc = block.match(/<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/)?.[1]?.trim() || '';
@@ -827,7 +845,7 @@ function parseRSS(xml, sourceName) {
       items.push({
         title, link, source: sourceName, publisher: sourceName,
         publishedAt: pubDate ? new Date(pubDate).toISOString() : null,
-        description: desc.replace(/<[^>]+>/g, '').slice(0, 200),
+        description: decodeHtmlEntities(desc).slice(0, 200),
         thumbnail: null,
       });
     }
@@ -1296,7 +1314,8 @@ function parseCryptoRSS(xml, source) {
   const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/g)].slice(0, 12);
   const result = [];
   for (const [item] of items) {
-    const title = (item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || item.match(/<title>([\s\S]*?)<\/title>/))?.[1]?.trim();
+    const titleRaw = (item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || item.match(/<title>([\s\S]*?)<\/title>/))?.[1]?.trim();
+    const title = decodeHtmlEntities(titleRaw);
     const link = (item.match(/<link>(.*?)<\/link>/) || item.match(/<guid[^>]*isPermaLink[^>]*>(https?:\/\/[^<]+)<\/guid>/) || item.match(/<guid[^>]*>(https?:\/\/[^<]+)<\/guid>/))?.[1]?.trim();
     const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim();
     if (title && link) result.push({ title, link, source, publishedAt: pubDate ? new Date(pubDate).toISOString() : null });
@@ -1318,7 +1337,7 @@ async function fetchCryptoNews() {
       const json = await r.json();
       (json.Data || []).forEach(item => {
         if (item.title && item.url) articles.push({
-          title: item.title, link: item.url,
+          title: decodeHtmlEntities(item.title), link: item.url,
           source: item.source_info?.name || item.source || 'CryptoCompare',
           imageUrl: item.imageurl || null,
           publishedAt: item.published_on ? new Date(item.published_on * 1000).toISOString() : null,
