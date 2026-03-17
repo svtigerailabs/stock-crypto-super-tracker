@@ -10,8 +10,10 @@
   --text-dim: #8b949e;
   --blue:     #58a6ff;
   --blue-dim: #1f6feb;
-  --green:    #3fb950;
-  --red:      #f85149;
+  --green:    #77DD77; /* pastel green — eye-friendly, less saturated */
+  --red:      #FF6B6B; /* coral red — eye-friendly, warm not harsh */
+  --green-rgb: 119,221,119;
+  --red-rgb:   255,107,107;
   --orange:   #d29922;
   --purple:   #bc8cff;
   --radius:   10px;
@@ -308,12 +310,12 @@ html, body {
   transition: all .15s; font-family: inherit;
 }
 .detail-btn:hover { background: var(--card); color: var(--text); border-color: #484f58; }
-.detail-btn.danger:hover { background: rgba(248,81,73,.12); border-color: var(--red); color: var(--red); }
+.detail-btn.danger:hover { background: rgba(255,107,107,.12); border-color: var(--red); color: var(--red); }
 
 .market-state-badge {
   font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; text-transform: uppercase;
 }
-.market-state-badge.REGULAR { background: rgba(63,185,80,.12); color: var(--green); }
+.market-state-badge.REGULAR { background: rgba(119,221,119,.12); color: var(--green); }
 .market-state-badge.PRE     { background: rgba(210,153,34,.12); color: var(--orange); }
 .market-state-badge.POST    { background: rgba(210,153,34,.12); color: var(--orange); }
 .market-state-badge.CLOSED  { background: rgba(139,148,158,.12); color: var(--text-dim); }
@@ -360,7 +362,7 @@ html, body {
   display: flex; align-items: center; justify-content: center; transition: all .15s; font-family: inherit;
 }
 .btn-icon:hover { background: var(--card); color: var(--text); border-color: #484f58; }
-.btn-icon.danger:hover { background: rgba(248,81,73,.12); border-color: var(--red); color: var(--red); }
+.btn-icon.danger:hover { background: rgba(255,107,107,.12); border-color: var(--red); color: var(--red); }
 
 /* ─── HISTORY LIST ────────────────────────────────────────────── */
 .history-list { display: flex; flex-direction: column; gap: 8px; }
@@ -431,8 +433,8 @@ html, body {
 .btn-sm:hover { color: var(--text); border-color: #484f58; }
 .btn-ghost { background: none; border: none; color: var(--text-dim); padding: 9px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; font-family: inherit; transition: all .15s; }
 .btn-ghost:hover { color: var(--text); background: var(--card); }
-.btn-danger-outline { background: transparent; border: 1px solid rgba(248,81,73,.4); color: var(--red); padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
-.btn-danger-outline:hover { background: rgba(248,81,73,.1); border-color: var(--red); }
+.btn-danger-outline { background: transparent; border: 1px solid rgba(255,107,107,.4); color: var(--red); padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+.btn-danger-outline:hover { background: rgba(255,107,107,.1); border-color: var(--red); }
 
 /* ─── MODAL ───────────────────────────────────────────────────── */
 .modal-overlay {
@@ -522,10 +524,10 @@ html, body {
 .analyst-bar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; }
 .analyst-bar div { min-width: 2px; }
 .analyst-bar .sb { background: #1a9a32; }
-.analyst-bar .b  { background: #3fb950; }
+.analyst-bar .b  { background: var(--green); }
 .analyst-bar .h  { background: #d29922; }
 .analyst-bar .s  { background: #f0883e; }
-.analyst-bar .ss { background: #f85149; }
+.analyst-bar .ss { background: var(--red); }
 .analyst-legend { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
 .analyst-legend span { font-size: 9px; color: var(--text-dim); }
 
@@ -608,7 +610,7 @@ html, body {
 .search-result-item .type { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
 .search-result-item .type.etf { background: rgba(188,140,255,.15); color: var(--purple); }
 .search-result-item .type.equity { background: rgba(88,166,255,.15); color: var(--blue); }
-.search-result-item .type.mutualfund { background: rgba(63,185,80,.12); color: var(--green); }
+.search-result-item .type.mutualfund { background: rgba(119,221,119,.12); color: var(--green); }
 
 /* ─── SYMBOL PREVIEW ──────────────────────────────────────────── */
 .symbol-preview {
@@ -895,7 +897,7 @@ html, body {
   cursor: pointer; transition: all .15s; font-family: inherit;
 }
 .mute-btn:hover { border-color: var(--blue-dim); background: #1c2128; }
-.mute-btn.muted { background: rgba(248,81,73,.1); border-color: var(--red); color: var(--red); }
+.mute-btn.muted { background: rgba(255,107,107,.1); border-color: var(--red); color: var(--red); }
 
 /* ─── CRYPTO COMPACT GRID ────────────────────────────────────── */
 .crypto-compact-grid {
@@ -1084,12 +1086,12 @@ html, body {
 
 /* ─── LIVECOINWATCH-STYLE TABLE (lcw-table) ──────────────────── */
 .lcw-table-scroll-wrap { width: 100%; overflow-x: auto; }
-.lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 1060px; }
+.lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 1200px; }
 
-/* Base crypto table: #, ★icon, coin, price, ATH, ToATH, 1H, 24H, 7D, 30D, ~6M, 1Y, chart, mcap, vol */
+/* Crypto table: #, ★icon, coin(fixed), price, ATH, ToATH, 1H, 24H, 7D, 30D, ~6M, YTD, 1Y, 2Y, 3Y, chart, mcap, vol */
 .lcw-header {
   display: grid;
-  grid-template-columns: 36px 46px 1fr 92px 85px 58px repeat(6, 54px) 200px 82px 76px;
+  grid-template-columns: 36px 44px 130px 90px 84px 56px repeat(9, 52px) 160px 80px 74px;
   gap: 0; padding: 10px 12px; font-size: 10px; font-weight: 800;
   color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px;
   background: var(--card); border-bottom: 2px solid var(--border);
@@ -1101,7 +1103,7 @@ html, body {
 
 .lcw-row {
   display: grid;
-  grid-template-columns: 36px 46px 1fr 92px 85px 58px repeat(6, 54px) 200px 82px 76px;
+  grid-template-columns: 36px 44px 130px 90px 84px 56px repeat(9, 52px) 160px 80px 74px;
   gap: 0; padding: 7px 12px; align-items: center;
   border-bottom: 1px solid #1c2128; background: var(--surface);
   font-size: 12px; transition: background .1s; cursor: pointer;
@@ -1317,15 +1319,15 @@ html, body {
   display: inline-block; font-size: 9px; font-weight: 800; padding: 1px 5px;
   border-radius: 3px; text-transform: uppercase; letter-spacing: .4px; vertical-align: middle;
 }
-.news-cat-badge.breaking { background: rgba(248,81,73,.2); color: var(--red); border: 1px solid rgba(248,81,73,.3); }
+.news-cat-badge.breaking { background: rgba(255,107,107,.2); color: var(--red); border: 1px solid rgba(255,107,107,.3); }
 .news-cat-badge.geo      { background: rgba(88,166,255,.1); color: var(--blue); border: 1px solid rgba(88,166,255,.2); }
-.news-cat-badge.market   { background: rgba(63,185,80,.1);  color: var(--green); border: 1px solid rgba(63,185,80,.2); }
+.news-cat-badge.market   { background: rgba(119,221,119,.1);  color: var(--green); border: 1px solid rgba(119,221,119,.2); }
 .news-cat-badge.portfolio{ background: rgba(188,140,255,.1);color: var(--purple); border: 1px solid rgba(188,140,255,.2); }
 
 /* Fresh/live badge */
 .news-fresh-badge {
   display: inline-block; font-size: 9px; font-weight: 900; padding: 1px 5px;
-  background: rgba(248,81,73,.9); color: #fff; border-radius: 3px; animation: pulseBadge 1.5s infinite;
+  background: rgba(255,107,107,.9); color: #fff; border-radius: 3px; animation: pulseBadge 1.5s infinite;
   text-transform: uppercase; letter-spacing: .5px; vertical-align: middle;
 }
 .news-fresh-badge.fresh-3h {
@@ -1341,13 +1343,13 @@ html, body {
 }
 .latest-news-item:last-child { border-bottom: none; }
 .latest-news-breaking {
-  background: rgba(248,81,73,.04);
+  background: rgba(255,107,107,.04);
   border-left: 3px solid var(--red);
   padding-left: 12px;
   margin-left: -12px;
 }
 .latest-news-portfolio {
-  background: rgba(63,185,80,.04);
+  background: rgba(119,221,119,.04);
   border-left: 3px solid var(--green);
   padding-left: 12px;
   margin-left: -12px;
@@ -1361,8 +1363,8 @@ html, body {
   background: var(--card); color: var(--text-dim);
 }
 .latest-news-source.cnbc { background: rgba(88,166,255,.12); color: #58a6ff; }
-.latest-news-source.bloomberg { background: rgba(63,185,80,.12); color: #3fb950; }
-.latest-news-source.reuters { background: rgba(248,81,73,.12); color: #f85149; }
+.latest-news-source.bloomberg { background: rgba(119,221,119,.12); color: var(--green); }
+.latest-news-source.reuters { background: rgba(255,107,107,.12); color: var(--red); }
 .latest-news-source.marketwatch { background: rgba(210,153,34,.12); color: #d29922; }
 .latest-news-source.yahoo-finance { background: rgba(188,140,255,.12); color: #bc8cff; }
 .latest-news-source[class*="x-"] { background: rgba(200,200,200,.1); color: #ccc; }
@@ -1400,7 +1402,7 @@ html, body {
   font-size: 11px; font-weight: 700; padding: 2px 8px;
   border-radius: 10px;
 }
-.portfolio-pill { background: rgba(63,185,80,.12); color: var(--green); }
+.portfolio-pill { background: rgba(119,221,119,.12); color: var(--green); }
 .custom-pill { background: rgba(88,166,255,.12); color: var(--blue); }
 .news-cust-hint {
   font-size: 11px; color: var(--text-dim); margin-bottom: 10px;
@@ -1496,7 +1498,7 @@ html, body {
   padding: 16px 20px; transition: border-color .15s;
 }
 .profile-card:hover { border-color: var(--blue-dim); }
-.profile-card.profile-active { border-color: var(--green); background: rgba(63,185,80,.04); }
+.profile-card.profile-active { border-color: var(--green); background: rgba(119,221,119,.04); }
 .profile-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .profile-name { font-size: 15px; font-weight: 700; color: var(--text); }
 .profile-meta { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
@@ -1508,11 +1510,11 @@ html, body {
 }
 .profile-symbols { font-size: 11px; color: var(--text-dim); margin-top: 4px; font-family: monospace; }
 .btn-danger-sm {
-  background: transparent; border: 1px solid rgba(248,81,73,.4); color: var(--red);
+  background: transparent; border: 1px solid rgba(255,107,107,.4); color: var(--red);
   padding: 5px 10px; border-radius: 6px; font-size: 11px; cursor: pointer;
   font-family: inherit; transition: all .15s;
 }
-.btn-danger-sm:hover { background: rgba(248,81,73,.1); border-color: var(--red); }
+.btn-danger-sm:hover { background: rgba(255,107,107,.1); border-color: var(--red); }
 
 /* ─── CUSTOM FEEDS ────────────────────────────────────────────── */
 .settings-card-wide { grid-column: 1 / -1; }
@@ -1634,8 +1636,8 @@ html, body {
   height: 14px; border-radius: 2px; min-width: 3px;
   transition: width .4s ease;
 }
-.sector-bar.pos { background: var(--green); box-shadow: 0 0 6px rgba(63,185,80,.25); }
-.sector-bar.neg { background: var(--red);   box-shadow: 0 0 6px rgba(248,81,73,.25); }
+.sector-bar.pos { background: var(--green); box-shadow: 0 0 6px rgba(119,221,119,.25); }
+.sector-bar.neg { background: var(--red);   box-shadow: 0 0 6px rgba(255,107,107,.25); }
 
 /* Percentage value */
 .sector-row-pct {
@@ -1836,15 +1838,22 @@ html, body {
 }
 .detail-open-full-btn:hover { background: rgba(88,166,255,.2); border-color: var(--blue); }
 
+/* ── Sector hover chart ── */
+.snp-chart-wrap {
+  padding: 6px 14px 4px; height: 70px; position: relative;
+}
+.snp-chart-wrap svg { display: block; width: 100%; height: 60px; }
+.snp-chart-loading { font-size: 11px; color: var(--text-dim); text-align: center; padding: 20px 0; }
+
 /* ── Sector popup footer ── */
 .snp-footer { padding: 6px 14px 8px; border-top: 1px solid var(--border); }
 .snp-open-btn {
-  background: rgba(63,185,80,.1); border: 1px solid rgba(63,185,80,.3);
+  background: rgba(119,221,119,.1); border: 1px solid rgba(119,221,119,.3);
   color: var(--green); padding: 4px 12px; border-radius: 6px;
   cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit;
   transition: all .15s; width: 100%;
 }
-.snp-open-btn:hover { background: rgba(63,185,80,.2); border-color: var(--green); }
+.snp-open-btn:hover { background: rgba(119,221,119,.2); border-color: var(--green); }
 
 /* ── Calendar controls (impact filters + search) ── */
 .cal-controls {
@@ -1859,9 +1868,9 @@ html, body {
   padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
   border: 1px solid transparent; cursor: pointer; transition: all .15s; user-select: none;
 }
-.cal-chip.high { background: rgba(248,81,73,.1); border-color: rgba(248,81,73,.3); color: #f85149; }
+.cal-chip.high { background: rgba(255,107,107,.1); border-color: rgba(255,107,107,.3); color: var(--red); }
 .cal-chip.medium { background: rgba(210,153,34,.1); border-color: rgba(210,153,34,.3); color: var(--orange); }
-.cal-chip.low { background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.3); color: var(--green); }
+.cal-chip.low { background: rgba(119,221,119,.1); border-color: rgba(119,221,119,.3); color: var(--green); }
 .cal-filter-check input:not(:checked) + .cal-chip { opacity: 0.4; }
 .cal-search-wrap { flex: 1; min-width: 200px; max-width: 380px; }
 .cal-search-input { width: 100%; font-size: 12px; padding: 6px 12px; }
@@ -1911,6 +1920,17 @@ html, body {
 .crypto-star-btn:not(.starred)::before { content: '☆'; }
 .crypto-star-btn { font-size: 0; } /* hide text node */
 .crypto-star-btn::before { font-size: 13px; }
+
+/* ── Crypto card-level star button (grid/card views) ── */
+.crypto-star-btn.card-star {
+  position: absolute; top: 5px; right: 6px;
+  font-size: 0; z-index: 2;
+}
+.crypto-star-btn.card-star::before { font-size: 13px; }
+
+/* ── Crypto heatmap view ── */
+.crypto-heatmap-container { width: 100%; }
+.crypto-heatmap-container .maps-widget-container { min-height: 500px; }
 
 /* ── Sector Customize dropdown ── */
 .cust-dropdown-wrap { display: flex; gap: 8px; align-items: center; }

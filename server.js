@@ -1181,7 +1181,7 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
       const json = await r.json();
       prices = (json.Data?.Data || []).map(d => d.close).filter(v => v > 0);
     } else {
-      const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730 };
+      const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '3y': 1095 };
       const limit = LIMIT_MAP[range];
       if (!limit) return res.status(400).json({ error: 'Invalid range' });
       const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&limit=${limit}`;
