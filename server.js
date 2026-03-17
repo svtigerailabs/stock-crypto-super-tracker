@@ -811,7 +811,7 @@ async function yfFinancials(symbol) {
 
 // ── RSS news parsing (CNBC, Bloomberg) ──
 const rssCache = { data: null, fetchedAt: 0 };
-const RSS_CACHE_TTL = 10 * 60 * 1000; // 10 min
+const RSS_CACHE_TTL = 20 * 60 * 1000; // 20 min (background refresh keeps it fresh)
 
 function parseRSS(xml, sourceName) {
   const items = [];
@@ -909,51 +909,80 @@ async function fetchRSSNews() {
   // Return fresh cache if still valid
   if (rssCache.data?.length && (Date.now() - rssCache.fetchedAt) < RSS_CACHE_TTL) return rssCache.data;
 
-  const feeds = [
-    // Google News RSS — most reliable, works from any server/IP
-    { url: 'https://news.google.com/rss/search?q=stock+market+finance&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
-    { url: 'https://news.google.com/rss/search?q=wall+street+investing&hl=en-US&gl=US&ceid=US:en', name: 'Google Finance' },
-    // Yahoo Finance
-    { url: 'https://finance.yahoo.com/news/rssindex', name: 'Yahoo Finance' },
-    // Dow Jones / MarketWatch
+  // ── TIER 1: Google News RSS — served via Google CDN, works from ANY cloud IP ──
+  // These are the ONLY sources that reliably work from cloud/VPS servers.
+  // Traditional financial sites (Yahoo Finance, Bloomberg, CNBC, Reuters, etc.)
+  // block datacenter IPs — Google News does not.
+  const googleFeeds = [
+    { url: 'https://news.google.com/rss/search?q=stock+market+S%26P+500+nasdaq&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=dow+jones+wall+street+stocks&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=Federal+Reserve+interest+rates+inflation+CPI&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=earnings+report+quarterly+results+revenue&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=investing+markets+economy+recession+GDP&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=IPO+merger+acquisition+corporate+finance&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=trading+options+ETF+bonds+treasury&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=Nasdaq+Apple+Tesla+Microsoft+Amazon+Nvidia&hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+  ];
+
+  // ── TIER 2: Traditional financial feeds (may work if server IP not blocked) ──
+  const fallbackFeeds = [
     { url: 'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines', name: 'MarketWatch' },
-    { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', name: 'WSJ Markets' },
-    // CNBC
     { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', name: 'CNBC' },
-    { url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664', name: 'CNBC Markets' },
-    // Others
-    { url: 'https://www.benzinga.com/feed', name: 'Benzinga' },
-    { url: 'https://feeds.feedburner.com/thestreet/investing', name: 'TheStreet' },
-    { url: 'https://www.fool.com/a/feeds/foolwatch', name: 'Motley Fool' },
     { url: 'https://feeds.reuters.com/reuters/businessNews', name: 'Reuters' },
-    { url: 'https://feeds.bloomberg.com/markets/news.rss', name: 'Bloomberg' },
+    { url: 'https://www.benzinga.com/feed', name: 'Benzinga' },
+    { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', name: 'WSJ Markets' },
+    { url: 'https://www.fool.com/a/feeds/foolwatch', name: 'Motley Fool' },
   ];
 
   let allItems = [];
-  const results = await Promise.allSettled(feeds.map(async feed => {
+
+  // Fetch Tier 1 first — these must succeed
+  await Promise.allSettled(googleFeeds.map(async feed => {
     try {
-      const res = await fetch(feed.url, { headers: YF_UA, signal: AbortSignal.timeout(8000) });
+      const res = await fetch(feed.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
+        signal: AbortSignal.timeout(10000),
+      });
       if (res.ok) {
         const xml = await res.text();
         const parsed = parseRSS(xml, feed.name);
         if (parsed.length) allItems.push(...parsed);
       }
-    } catch (e) { /* silent — will use stale cache if all fail */ }
+    } catch (e) { /* silent */ }
   }));
+
+  // Fetch Tier 2 in parallel if Tier 1 gave < 20 articles
+  if (allItems.length < 20) {
+    await Promise.allSettled(fallbackFeeds.map(async feed => {
+      try {
+        const res = await fetch(feed.url, { headers: YF_UA, signal: AbortSignal.timeout(6000) });
+        if (res.ok) {
+          const xml = await res.text();
+          const parsed = parseRSS(xml, feed.name);
+          if (parsed.length) allItems.push(...parsed);
+        }
+      } catch (e) { /* silent */ }
+    }));
+  }
 
   // Deduplicate by title and sort newest first
   const seen = new Set();
-  allItems = allItems.filter(a => { if (seen.has(a.title)) return false; seen.add(a.title); return true; });
+  allItems = allItems.filter(a => {
+    if (!a.title) return false;
+    const key = a.title.slice(0, 60);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   allItems.sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
-  const fresh = allItems.slice(0, 80);
+  const fresh = allItems.slice(0, 100);
 
   if (fresh.length > 0) {
-    // Only update cache when we actually got articles (never overwrite good cache with empty)
     rssCache.data = fresh;
     rssCache.fetchedAt = Date.now();
-    console.log(`RSS news: fetched ${fresh.length} articles`);
+    console.log(`RSS news: fetched ${fresh.length} articles (Google News primary)`);
   } else if (rssCache.data?.length) {
-    console.warn('RSS news: all feeds failed, returning stale cache (' + rssCache.data.length + ' articles)');
+    console.warn(`RSS news: all feeds failed, returning stale cache (${rssCache.data.length} articles)`);
   } else {
     console.error('RSS news: all feeds failed and no stale cache available');
   }
@@ -1259,73 +1288,121 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── CRYPTO NEWS (CryptoCompare API primary + RSS fallback) ────────────────
+// ─── CRYPTO NEWS (CryptoCompare API primary + multi-source RSS) ──────────────
 const cryptoNewsCache = { data: null, at: 0 };
+
+// Helper: parse a basic RSS feed and return articles
+function parseCryptoRSS(xml, source) {
+  const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/g)].slice(0, 12);
+  const result = [];
+  for (const [item] of items) {
+    const title = (item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || item.match(/<title>([\s\S]*?)<\/title>/))?.[1]?.trim();
+    const link = (item.match(/<link>(.*?)<\/link>/) || item.match(/<guid[^>]*isPermaLink[^>]*>(https?:\/\/[^<]+)<\/guid>/) || item.match(/<guid[^>]*>(https?:\/\/[^<]+)<\/guid>/))?.[1]?.trim();
+    const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim();
+    if (title && link) result.push({ title, link, source, publishedAt: pubDate ? new Date(pubDate).toISOString() : null });
+  }
+  return result;
+}
+
 async function fetchCryptoNews() {
   if (cryptoNewsCache.data && (Date.now() - cryptoNewsCache.at) < 8 * 60 * 1000) return cryptoNewsCache.data;
   let articles = [];
 
-  // Primary: CryptoCompare News API (free, no key, highly reliable)
+  // ── Source 1: CryptoCompare News API — free, no key, confirmed cloud-friendly ──
   try {
-    const r = await fetch('https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=30', {
+    const r = await fetch('https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=50', {
       headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
       signal: AbortSignal.timeout(8000),
     });
     if (r.ok) {
       const json = await r.json();
       (json.Data || []).forEach(item => {
-        if (item.title && item.url) {
-          articles.push({
-            title: item.title,
-            link: item.url,
-            source: item.source_info?.name || item.source || 'CryptoCompare',
-            publishedAt: item.published_on ? new Date(item.published_on * 1000).toISOString() : null,
-          });
-        }
+        if (item.title && item.url) articles.push({
+          title: item.title, link: item.url,
+          source: item.source_info?.name || item.source || 'CryptoCompare',
+          imageUrl: item.imageurl || null,
+          publishedAt: item.published_on ? new Date(item.published_on * 1000).toISOString() : null,
+        });
       });
     }
-  } catch (_) { /* fallback to RSS */ }
+  } catch (_) {}
 
-  // Fallback: RSS feeds (if API gave < 5 articles)
-  if (articles.length < 5) {
-    const feeds = [
-      { url: 'https://cointelegraph.com/rss', source: 'CoinTelegraph' },
-      { url: 'https://decrypt.co/feed', source: 'Decrypt' },
-      { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
-    ];
-    await Promise.allSettled(feeds.map(async feed => {
-      try {
-        const r = await fetch(feed.url, { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'Mozilla/5.0' } });
-        if (!r.ok) return;
-        const xml = await r.text();
-        const items = [...xml.matchAll(/<item[\s\S]*?<\/item>/g)].slice(0, 8);
-        for (const [item] of items) {
-          const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1]?.trim();
-          const link = (item.match(/<link>(.*?)<\/link>/) || item.match(/<guid[^>]*>(https?:\/\/[^<]+)<\/guid>/))?.[1]?.trim();
-          const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim();
-          if (title && link) articles.push({ title, link, source: feed.source, publishedAt: pubDate ? new Date(pubDate).toISOString() : null });
-        }
-      } catch (_) {}
-    }));
-  }
+  // ── Source 2: Google News RSS for crypto topics — reliable from any cloud IP ──
+  const cryptoGoogleFeeds = [
+    { url: 'https://news.google.com/rss/search?q=bitcoin+ethereum+cryptocurrency&hl=en-US&gl=US&ceid=US:en', source: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=crypto+blockchain+defi+altcoin&hl=en-US&gl=US&ceid=US:en', source: 'Google News' },
+    { url: 'https://news.google.com/rss/search?q=BTC+ETH+crypto+market+price&hl=en-US&gl=US&ceid=US:en', source: 'Google News' },
+  ];
+  await Promise.allSettled(cryptoGoogleFeeds.map(async f => {
+    try {
+      const r = await fetch(f.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (r.ok) articles.push(...parseCryptoRSS(await r.text(), f.source));
+    } catch (_) {}
+  }));
 
-  // Sort newest first, dedupe by title
-  articles.sort((a, b) => (new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0)) || 0);
+  // ── Source 3: Top crypto news site RSS feeds ──
+  const cryptoRssFeeds = [
+    { url: 'https://cointelegraph.com/rss', source: 'CoinTelegraph' },
+    { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
+    { url: 'https://decrypt.co/feed', source: 'Decrypt' },
+    { url: 'https://bitcoinmagazine.com/.rss/full/', source: 'Bitcoin Magazine' },
+    { url: 'https://thedefiant.io/feed', source: 'The Defiant' },
+    { url: 'https://blockworks.co/feed', source: 'Blockworks' },
+    { url: 'https://beincrypto.com/feed/', source: 'BeInCrypto' },
+    { url: 'https://ambcrypto.com/feed/', source: 'AMBCrypto' },
+  ];
+  await Promise.allSettled(cryptoRssFeeds.map(async f => {
+    try {
+      const r = await fetch(f.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (r.ok) articles.push(...parseCryptoRSS(await r.text(), f.source));
+    } catch (_) {}
+  }));
+
+  // ── Source 4: X / Twitter via Nitter RSS — top crypto accounts ──
+  // Nitter is a free Twitter frontend; availability varies — silently skip if down
+  const nitterInstances = ['https://nitter.privacydev.net', 'https://nitter.poast.org'];
+  const cryptoXAccounts = ['CoinDesk', 'Cointelegraph', 'bitcoin', 'VitalikButerin', 'APompliano', 'DocumentingBTC'];
+  const nitter = nitterInstances[Math.floor(Math.random() * nitterInstances.length)];
+  await Promise.allSettled(cryptoXAccounts.slice(0, 4).map(async handle => {
+    try {
+      const r = await fetch(`${nitter}/${handle}/rss`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000),
+      });
+      if (r.ok) {
+        const parsed = parseCryptoRSS(await r.text(), `X @${handle}`);
+        // Only keep tweets with crypto-relevant content
+        const cryptoKw = /bitcoin|btc|eth|crypto|blockchain|defi|nft|coin|token|solana|binance/i;
+        articles.push(...parsed.filter(a => cryptoKw.test(a.title)));
+      }
+    } catch (_) {}
+  }));
+
+  // Dedupe and sort
+  articles.sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
   const seen = new Set();
-  const deduped = articles.filter(a => { if (seen.has(a.title)) return false; seen.add(a.title); return true; });
-  const fresh = deduped.slice(0, 30);
+  const fresh = articles.filter(a => {
+    if (!a.title) return false;
+    const k = a.title.slice(0, 60);
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  }).slice(0, 80);
+
   if (fresh.length > 0) {
-    // Only update cache with non-empty results (never overwrite good cache with empty)
     cryptoNewsCache.data = fresh;
     cryptoNewsCache.at = Date.now();
-    console.log(`Crypto news: fetched ${fresh.length} articles`);
+    console.log(`Crypto news: fetched ${fresh.length} articles from ${[...new Set(fresh.map(a => a.source))].length} sources`);
   } else if (cryptoNewsCache.data?.length) {
     console.warn('Crypto news: all sources failed, returning stale cache');
-  } else {
-    console.error('Crypto news: all sources failed and no stale cache available');
   }
   return cryptoNewsCache.data || [];
 }
+
 app.get('/api/crypto/news', async (req, res) => {
   try { res.json(await fetchCryptoNews()); }
   catch (e) { res.status(500).json({ error: e.message }); }
@@ -1643,9 +1720,20 @@ server.listen(PORT, () => {
   console.log(`\n🚀 Stock Volatility Tracker → http://localhost:${PORT}\n`);
   restartCron();
   if (alerts.length > 0) setTimeout(checkAlerts, 2000);
-  // Pre-warm news caches so first client request never waits
+  // Pre-warm all caches so first client request never waits
   setTimeout(() => {
     Promise.allSettled([fetchRSSNews(), fetchCryptoNews(), fetchEconCalendar()])
-      .then(() => console.log('📰 News & calendar caches pre-warmed'));
-  }, 3000);
+      .then(results => {
+        const [rss, crypto, econ] = results;
+        console.log(`📰 RSS news: ${rss.status === 'fulfilled' ? rssCache.data?.length + ' articles' : 'FAILED'}`);
+        console.log(`₿  Crypto news: ${crypto.status === 'fulfilled' ? cryptoNewsCache.data?.length + ' articles' : 'FAILED'}`);
+        console.log(`📅 Econ calendar: ${econ.status === 'fulfilled' ? econCalCache.data?.length + ' events' : 'FAILED'}`);
+      });
+  }, 2000);
+
+  // Background auto-refresh — keeps caches warm even without client requests
+  // RSS news every 15 min, crypto news every 10 min
+  setInterval(() => fetchRSSNews().catch(() => {}), 15 * 60 * 1000);
+  setInterval(() => fetchCryptoNews().catch(() => {}), 10 * 60 * 1000);
+  setInterval(() => fetchEconCalendar().catch(() => {}), 30 * 60 * 1000);
 });

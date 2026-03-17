@@ -359,7 +359,25 @@
     <div id="crypto-grid" class="stocks-grid">
       <div class="empty-state"><div class="empty-icon">₿</div><h3>Loading crypto data…</h3></div>
     </div>
-    <div id="crypto-news-section" class="dashboard-news-section" style="display:none"></div>
+
+    <!-- Crypto News Panel -->
+    <div class="crypto-news-panel" id="crypto-news-panel">
+      <div class="crypto-news-panel-header">
+        <h3 class="crypto-news-panel-title">📰 Crypto News</h3>
+        <div class="crypto-news-source-tabs" id="crypto-news-source-tabs">
+          <button class="crypto-news-src-btn active" data-src="all" onclick="filterCryptoNewsBySource('all')">All</button>
+          <button class="crypto-news-src-btn" data-src="CryptoCompare" onclick="filterCryptoNewsBySource('CryptoCompare')">CryptoCompare</button>
+          <button class="crypto-news-src-btn" data-src="CoinTelegraph" onclick="filterCryptoNewsBySource('CoinTelegraph')">CoinTelegraph</button>
+          <button class="crypto-news-src-btn" data-src="CoinDesk" onclick="filterCryptoNewsBySource('CoinDesk')">CoinDesk</button>
+          <button class="crypto-news-src-btn" data-src="Decrypt" onclick="filterCryptoNewsBySource('Decrypt')">Decrypt</button>
+          <button class="crypto-news-src-btn" data-src="Bitcoin Magazine" onclick="filterCryptoNewsBySource('Bitcoin Magazine')">Bitcoin Mag</button>
+          <button class="crypto-news-src-btn" data-src="Google News" onclick="filterCryptoNewsBySource('Google News')">Google News</button>
+          <button class="crypto-news-src-btn" data-src="x" onclick="filterCryptoNewsBySource('x')">𝕏 Twitter</button>
+        </div>
+        <button class="btn-sm" onclick="refreshCryptoNews()" style="margin-left:auto">↻ Refresh</button>
+      </div>
+      <div id="crypto-news-section" class="crypto-news-grid-inner"></div>
+    </div>
   </section>
 
   <!-- ALERTS VIEW -->

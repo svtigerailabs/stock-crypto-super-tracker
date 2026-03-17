@@ -56,6 +56,11 @@ async function init() {
   setTimeout(loadDashboardNews, 4000);
   setInterval(() => { dashNewsLoaded = false; loadDashboardNews(); }, 5 * 60 * 1000);
 
+  // Pre-load crypto news so it's ready when user opens Crypto Dashboard
+  setTimeout(() => loadCryptoNews(), 6000);
+  // Refresh crypto news every 10 minutes
+  setInterval(() => loadCryptoNews(true), 10 * 60 * 1000);
+
   // Background chart preloading: stocks every 30 min, crypto every 5 min
   setTimeout(_preloadStockCharts, 5000); // initial load after 5s
   setInterval(_preloadStockCharts, 30 * 60 * 1000);
@@ -371,7 +376,7 @@ function navigate(view) {
     case 'calendar': loadEconCalendar(); break;
     case 'screener': initTVScreener(); break;
     case 'tradingview': initTVTradingView(); break;
-    case 'crypto': renderCryptoDashboard(); break;
+    case 'crypto': renderCryptoDashboard(); loadCryptoNews(); break;
     case 'settings': renderSettings(); break;
   }
 }
@@ -3177,54 +3182,92 @@ function toggleCryptoPin(id) {
 }
 
 let _cryptoNewsCache = [];
+let _cryptoNewsLoadedAt = 0;
+let _cryptoNewsSourceFilter = 'all';
 
-async function loadCryptoNews() {
+async function loadCryptoNews(forceRefresh = false) {
   const section = document.getElementById('crypto-news-section');
   if (!section) return;
-  // Skip if loaded recently AND has content
-  if (section.dataset.loaded && _cryptoNewsCache.length && (Date.now() - parseInt(section.dataset.loaded)) < 5 * 60 * 1000) return;
 
+  // Skip if recently loaded (5 min) unless forced
+  if (!forceRefresh && _cryptoNewsCache.length && (Date.now() - _cryptoNewsLoadedAt) < 5 * 60 * 1000) {
+    renderCryptoNewsCards();
+    return;
+  }
+
+  // Show skeleton while loading (only if empty)
   if (!_cryptoNewsCache.length) {
-    section.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px">Loading crypto news…</div>';
+    section.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:var(--text-dim);text-align:center;font-size:13px">Loading crypto news from top sources…</div>';
   }
 
   try {
     const articles = await api('GET', '/crypto/news');
     if (Array.isArray(articles) && articles.length) {
       _cryptoNewsCache = articles;
+      _cryptoNewsLoadedAt = Date.now();
     }
-  } catch(e) { /* use cache */ }
+  } catch(e) { /* use stale cache */ }
 
-  section.dataset.loaded = Date.now().toString();
-  const articles = _cryptoNewsCache;
-  if (!articles.length) {
-    section.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px">Loading crypto news…</div>';
-    setTimeout(() => { section.dataset.loaded = '0'; loadCryptoNews(); }, 20000);
+  if (!_cryptoNewsCache.length) {
+    section.innerHTML = '<div style="grid-column:1/-1;padding:20px;color:var(--text-dim);text-align:center">No crypto news available yet — retrying…</div>';
+    setTimeout(() => loadCryptoNews(true), 20000);
     return;
   }
 
-  section.innerHTML = `
-    <div class="news-section-header">
-      <span class="news-section-title">📰 Crypto News</span>
-      <button class="btn-sm" onclick="refreshCryptoNews()">↻ Refresh</button>
-    </div>
-    <div class="news-articles-grid">
-      ${articles.map(a => `
-        <div class="news-article-item">
-          <div class="news-article-top">
-            <div class="news-article-source">${a.source}</div>
-            ${buildNewsActionBtns(a.title, a.link, a.source, a.pubDate || a.publishedAt)}
-          </div>
-          <a class="news-article-link" href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
-          <div class="news-article-date">${(a.pubDate || a.publishedAt) ? new Date(a.pubDate || a.publishedAt).toLocaleDateString('en-US', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}</div>
-        </div>`).join('')}
+  renderCryptoNewsCards();
+}
+
+function renderCryptoNewsCards() {
+  const section = document.getElementById('crypto-news-section');
+  if (!section) return;
+
+  let articles = _cryptoNewsCache;
+
+  // Apply source filter
+  if (_cryptoNewsSourceFilter !== 'all') {
+    if (_cryptoNewsSourceFilter === 'x') {
+      articles = articles.filter(a => (a.source || '').startsWith('X @'));
+    } else {
+      articles = articles.filter(a => (a.source || '').toLowerCase().includes(_cryptoNewsSourceFilter.toLowerCase()));
+    }
+  }
+
+  if (!articles.length) {
+    section.innerHTML = `<div style="grid-column:1/-1;padding:20px;color:var(--text-dim);text-align:center">No articles from this source yet. <button class="btn-sm" onclick="filterCryptoNewsBySource('all')">Show All</button></div>`;
+    return;
+  }
+
+  section.innerHTML = articles.slice(0, 40).map(a => {
+    const ts = a.publishedAt || a.pubDate;
+    const date = ts ? new Date(ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+    const ageHours = ts ? (Date.now() - new Date(ts).getTime()) / 3600000 : Infinity;
+    const freshDot = ageHours < 1 ? '<span class="crypto-news-fresh-dot"></span>' : '';
+    const isX = (a.source || '').startsWith('X @');
+    const srcLabel = isX
+      ? `<span class="crypto-news-src-label x-label">𝕏 ${a.source.replace('X @', '@')}</span>`
+      : `<span class="crypto-news-src-label">${a.source || 'News'}</span>`;
+    return `<div class="crypto-news-card">
+      <div class="crypto-news-card-source">
+        ${srcLabel}
+        <span class="crypto-news-card-time">${freshDot}${date}</span>
+      </div>
+      <div class="crypto-news-card-title">
+        <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+      </div>
     </div>`;
+  }).join('');
+}
+
+function filterCryptoNewsBySource(src) {
+  _cryptoNewsSourceFilter = src;
+  document.querySelectorAll('.crypto-news-src-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.src === src);
+  });
+  renderCryptoNewsCards();
 }
 
 function refreshCryptoNews() {
-  const section = document.getElementById('crypto-news-section');
-  if (section) section.dataset.loaded = '0';
-  loadCryptoNews();
+  loadCryptoNews(true);
 }
 
 function buildCryptoCard(c) {
