@@ -2057,20 +2057,25 @@ html, body {
 
 /* ── Calendar compact controls row ── */
 .econ-cal-controls-row {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin-bottom: 12px; padding: 8px 0;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 8px; padding: 6px 10px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
 }
-.cal-range-btns { display: flex; gap: 4px; }
+.cal-range-btns { display: flex; gap: 3px; }
 .cal-range-btn {
-  background: var(--card); border: 1px solid var(--border); color: var(--text-dim);
-  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700;
-  cursor: pointer; font-family: inherit; transition: all .15s;
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 700;
+  cursor: pointer; font-family: inherit; transition: all .12s;
 }
 .cal-range-btn.active { background: rgba(88,166,255,.15); border-color: var(--blue); color: var(--blue); }
 .cal-range-btn:hover { border-color: var(--blue); color: var(--blue); }
-.cal-search-input-compact { max-width: 200px; font-size: 12px; padding: 5px 10px; }
-.econ-cal-table td { font-size: 12px; padding: 5px 10px; }
-.econ-cal-table th { font-size: 10px; }
+.cal-search-input-compact { max-width: 160px; font-size: 11px; padding: 3px 8px; }
+.cal-filter-check { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+.cal-chip { font-size: 11px; font-weight: 600; }
+.econ-cal-table td { font-size: 11.5px; padding: 4px 10px; }
+.econ-cal-table th { font-size: 10px; padding: 6px 10px; }
+/* Calendar view-header more compact */
+#calendar-view .view-header { margin-bottom: 6px; padding-bottom: 6px; }
 
 /* ── Screener length row ── */
 .screener-length-row {
@@ -2087,7 +2092,88 @@ html, body {
 /* ── Sector popup enlarged ── */
 .sector-news-popup { width: 560px !important; }
 
-/* ── Crypto News View item layout ── */
+/* ═══════════════════════════════════════════════════════════════
+   UNIFIED COMPACT NEWS LIST (Stock News + Crypto News View)
+   Single-line: [SRC] [LIVE?] Title… [time]
+   ═══════════════════════════════════════════════════════════════ */
+.nl-item {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: nowrap;
+  padding: 7px 0; border-bottom: 1px solid var(--border);
+  overflow: hidden; line-height: 1.4;
+}
+.nl-item:last-child { border-bottom: none; }
+.nl-breaking { border-left: 2px solid var(--red); padding-left: 8px; }
+.nl-portfolio { border-left: 2px solid var(--green); padding-left: 8px; }
+.nl-src {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 800; padding: 1px 5px; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: .3px; white-space: nowrap;
+  background: var(--card); color: var(--text-dim);
+}
+.nl-src.google-news { background: rgba(66,133,244,.12); color: #4285f4; }
+.nl-src.cnbc        { background: rgba(88,166,255,.12); color: #58a6ff; }
+.nl-src.bloomberg   { background: rgba(119,221,119,.12); color: var(--green); }
+.nl-src.reuters     { background: rgba(255,107,107,.12); color: var(--red); }
+.nl-src.marketwatch { background: rgba(210,153,34,.12); color: #d29922; }
+.nl-src.yahoo-finance { background: rgba(188,140,255,.12); color: #bc8cff; }
+.nl-src.coindesk,
+.nl-src.cointelegraph,
+.nl-src.decrypt     { background: rgba(88,166,255,.1); color: var(--blue); }
+.nl-live {
+  flex-shrink: 0; font-size: 8.5px; font-weight: 900; padding: 1px 4px; border-radius: 3px;
+  background: rgba(255,107,107,.85); color: #fff; text-transform: uppercase; letter-spacing: .5px;
+  animation: pulseBadge 1.5s infinite;
+}
+.nl-new {
+  flex-shrink: 0; font-size: 8.5px; font-weight: 900; padding: 1px 4px; border-radius: 3px;
+  background: rgba(210,153,34,.8); color: #fff; text-transform: uppercase;
+}
+.nl-title {
+  flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text);
+  text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: color .15s;
+}
+.nl-title:hover { color: var(--blue); }
+.nl-time {
+  flex-shrink: 0; font-size: 10.5px; color: var(--text-dim); white-space: nowrap; margin-left: auto;
+}
+
+/* ── Compact news controls row (Stock News) ── */
+.news-controls-compact {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 6px 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; margin-bottom: 12px;
+}
+.news-ctrl-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.news-ctrl-label {
+  font-size: 9.5px; font-weight: 800; color: var(--text-dim); text-transform: uppercase;
+  letter-spacing: .4px; white-space: nowrap; margin-right: 2px;
+}
+.news-ctrl-divider {
+  width: 1px; height: 16px; background: var(--border); flex-shrink: 0; margin: 0 4px;
+}
+.news-chip {
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
+  cursor: pointer; font-family: inherit; transition: all .12s; white-space: nowrap;
+}
+.news-chip:hover { color: var(--text); border-color: #484f58; }
+.news-chip.active { background: rgba(88,166,255,.15); border-color: var(--blue); color: var(--blue); }
+
+/* ── Crypto zoom controls ── */
+.crypto-zoom-controls {
+  display: flex; align-items: center; gap: 3px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 2px 4px; flex-shrink: 0;
+}
+.crypto-zoom-btn {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 14px; font-family: inherit; padding: 2px 6px; border-radius: 4px;
+  transition: all .12s; line-height: 1.4;
+}
+.crypto-zoom-btn:hover { background: var(--card); color: var(--text); }
+.crypto-zoom-label { font-size: 11px; color: var(--text-dim); min-width: 34px; text-align: center; }
+
+/* Keep old crypto-news panel styles intact */
 .news-item-title { font-size: 13px; font-weight: 600; line-height: 1.45; margin: 4px 0 2px; }
 .news-item-title a { color: var(--text); text-decoration: none; }
 .news-item-title a:hover { color: var(--blue); }

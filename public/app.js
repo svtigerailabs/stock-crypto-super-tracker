@@ -602,39 +602,42 @@ function renderTickerMarquee(type) {
   const articles = tickerState[type].articles;
   const trackEl = document.getElementById(`${type}-ticker-track`);
   if (!trackEl) return;
-  if (!articles.length) {
-    // Fallback 1: Market index data — always available after 30s
-    if (type === 'stock') {
-      const mktItems = _buildMarketIndexTickerItems();
-      if (mktItems) { trackEl.innerHTML = mktItems + mktItems; _restartTickerAnim(trackEl); return; }
-    }
-    // Fallback 2: Stock portfolio prices
-    if (type === 'stock' && Object.keys(state.stocks).length) {
-      const items = Object.entries(state.stocks).slice(0, 10).map(([sym, s]) => {
+
+  // Build price prefix — always show market/crypto prices in ticker (never empty)
+  let pricePrefix = '';
+  if (type === 'stock') {
+    pricePrefix = _buildMarketIndexTickerItems();
+    // If market index not loaded yet, use portfolio prices
+    if (!pricePrefix && Object.keys(state.stocks).length) {
+      pricePrefix = Object.entries(state.stocks).slice(0, 8).map(([sym, s]) => {
         const chg = s.changePercent;
         return `<span class="ticker-item">` +
           `<span class="ticker-title">${sym}</span>` +
-          `<span class="ticker-meta" style="color:${(chg||0)>=0?'var(--green)':'var(--red)'}">${s.price?'$'+s.price.toFixed(2):''} ${chg!=null?`(${chg>=0?'+':''}${chg.toFixed(2)}%)`:''}` +
-          `</span><span class="ticker-sep">•</span></span>`;
+          `<span class="ticker-meta" style="color:${(chg||0)>=0?'var(--green)':'var(--red)'}">${s.price?'$'+s.price.toFixed(2):''} ${chg!=null?`(${chg>=0?'+':''}${chg.toFixed(2)}%)`:''}</span>` +
+          `<span class="ticker-sep">◆</span></span>`;
       }).join('');
-      if (items) { trackEl.innerHTML = items + items; _restartTickerAnim(trackEl); return; }
     }
-    // Fallback 3: Crypto prices
-    if (type === 'crypto' && state.cryptoData?.length) {
-      const items = state.cryptoData.slice(0, 8).map(c =>
-        `<span class="ticker-item">
-          <span class="ticker-title">${c.symbol}</span>
-          <span class="ticker-meta" style="color:${(c.change24h||0)>=0?'var(--green)':'var(--red)'}">${cryptoPriceFmt(c.price)} ${c.change24h!=null?`(${c.change24h>=0?'+':''}${c.change24h.toFixed(2)}%)`:''}</span>
-          <span class="ticker-sep">•</span>
-        </span>`).join('');
-      if (items) { trackEl.innerHTML = items + items; _restartTickerAnim(trackEl); return; }
+  } else if (type === 'crypto' && state.cryptoData?.length) {
+    pricePrefix = state.cryptoData.slice(0, 8).map(c =>
+      `<span class="ticker-item">` +
+      `<span class="ticker-title">${c.symbol}</span>` +
+      `<span class="ticker-meta" style="color:${(c.change24h||0)>=0?'var(--green)':'var(--red)'}">${cryptoPriceFmt(c.price)} ${c.change24h!=null?`(${c.change24h>=0?'+':''}${c.change24h.toFixed(2)}%)`:''}` +
+      `</span><span class="ticker-sep">◆</span></span>`
+    ).join('');
+  }
+
+  if (!articles.length) {
+    // Only prices available — show them if we have any
+    if (pricePrefix) {
+      trackEl.innerHTML = pricePrefix + pricePrefix;
+      _restartTickerAnim(trackEl);
+    } else {
+      trackEl.innerHTML = '<span class="ticker-loading">Loading market data…</span>';
     }
-    // Last resort: brief loading message (replaced within 30s by market data)
-    trackEl.innerHTML = '<span class="ticker-loading">Loading market data…</span>';
     return;
   }
 
-  const buildItems = () => articles.map(art => {
+  const buildNewsItems = () => articles.map(art => {
     const src = art.source ? `[${art.source}]` : '';
     let timeStr = '';
     if (art.publishedAt) {
@@ -648,8 +651,9 @@ function renderTickerMarquee(type) {
       `</a><span class="ticker-sep">◆</span>`;
   }).join('');
 
-  // Duplicate content for seamless infinite loop
-  trackEl.innerHTML = buildItems() + buildItems();
+  // Show prices + headlines together for maximum information density
+  const allContent = (pricePrefix || '') + buildNewsItems();
+  trackEl.innerHTML = allContent + allContent;
   _restartTickerAnim(trackEl);
 }
 
@@ -2905,16 +2909,19 @@ async function renderLatestNews() {
       </div>
     </div>
 
-    <!-- Category filter tabs -->
-    <div class="news-category-tabs" id="news-cat-tabs">
-      ${NEWS_CATEGORIES.map(c => `<button class="news-tab ${c.key==='all'?'active':''}" data-cat="${c.key}" onclick="filterNewsCategory('${c.key}')">${c.label}</button>`).join('')}
-    </div>
-
-    <!-- Source filter tabs -->
-    <div class="news-source-tabs" id="news-tabs">
-      <button class="news-tab active" data-src="all" onclick="filterNews('all')">All Sources</button>
-      ${NEWS_SOURCES.map(s => `<button class="news-tab" data-src="${s}" onclick="filterNews('${s}')">${s}</button>`).join('')}
-      <button class="news-tab" data-src="X" onclick="filterNews('X')">𝕏 Twitter</button>
+    <!-- Compact combined filter row: category + source on one line -->
+    <div class="news-controls-compact" id="news-controls-compact">
+      <div class="news-ctrl-group">
+        <span class="news-ctrl-label">Type</span>
+        ${NEWS_CATEGORIES.map(c => `<button class="news-chip ${c.key==='all'?'active':''}" data-cat="${c.key}" onclick="filterNewsCategory('${c.key}')">${c.label}</button>`).join('')}
+      </div>
+      <div class="news-ctrl-divider"></div>
+      <div class="news-ctrl-group">
+        <span class="news-ctrl-label">Source</span>
+        <button class="news-chip active" data-src="all" onclick="filterNews('all')">All</button>
+        ${NEWS_SOURCES.map(s => `<button class="news-chip" data-src="${s}" onclick="filterNews('${s}')">${s}</button>`).join('')}
+        <button class="news-chip" data-src="X" onclick="filterNews('X')">𝕏</button>
+      </div>
     </div>
 
     ${buildXSection()}
@@ -3036,21 +3043,16 @@ function renderCryptoNewsViewList() {
 
   list.innerHTML = articles.slice(0, 80).map(a => {
     const ts = a.publishedAt || a.pubDate;
-    const date = ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const timeStr = ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
     const ageHours = ts ? (Date.now() - new Date(ts).getTime()) / 3600000 : Infinity;
-    const freshDot = ageHours < 1 ? '<span class="crypto-news-fresh-dot"></span>' : '';
+    const freshDot = ageHours < 1 ? '<span class="nl-live" style="margin-right:2px">LIVE</span>' : '';
     const isX = (a.source || '').startsWith('X @');
     const srcLabel = isX
-      ? `<span class="crypto-news-src-label x-label">𝕏 ${a.source.replace('X @', '@')}</span>`
-      : `<span class="crypto-news-src-label">${a.source || 'News'}</span>`;
-    return `<div class="latest-news-item">
-      <div class="crypto-news-card-source">
-        ${srcLabel}
-        <span class="news-item-time">${freshDot}${date}</span>
-      </div>
-      <div class="news-item-title">
-        <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
-      </div>
+      ? `<span class="nl-src" style="background:rgba(200,200,200,.1);color:#ccc">𝕏 ${a.source.replace('X @', '@')}</span>`
+      : `<span class="nl-src">${a.source || 'News'}</span>`;
+    return `<div class="nl-item">
+      ${srcLabel}${freshDot}<a class="nl-title" href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+      <span class="nl-time">${timeStr}</span>
     </div>`;
   }).join('');
 }
@@ -3123,13 +3125,13 @@ async function refreshLatestNews(force = false) {
 
 function filterNews(source) {
   newsFilter = source;
-  document.querySelectorAll('#news-tabs .news-tab').forEach(t => t.classList.toggle('active', t.dataset.src === source));
+  document.querySelectorAll('#news-controls-compact .news-chip[data-src]').forEach(t => t.classList.toggle('active', t.dataset.src === source));
   renderNewsItems();
 }
 
 function filterNewsCategory(cat) {
   newsCategoryFilter = cat;
-  document.querySelectorAll('#news-cat-tabs .news-tab').forEach(t => t.classList.toggle('active', t.dataset.cat === cat));
+  document.querySelectorAll('#news-controls-compact .news-chip[data-cat]').forEach(t => t.classList.toggle('active', t.dataset.cat === cat));
   renderNewsItems();
 }
 
@@ -3156,39 +3158,25 @@ function renderNewsItems() {
   if (!items.length) { list.innerHTML = '<div class="news-empty">No news found for current filter. Try "All News".</div>'; return; }
 
   list.innerHTML = items.map((n, idx) => {
-    const date = n.publishedAt ? new Date(n.publishedAt).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
-    const ageMs = n.publishedAt ? Date.now() - new Date(n.publishedAt).getTime() : Infinity;
+    const ts = n.publishedAt;
+    const ageMs = ts ? Date.now() - new Date(ts).getTime() : Infinity;
     const ageHours = ageMs / 3600000;
-    const freshBadge = ageHours < 1 ? '<span class="news-fresh-badge">🔴 LIVE</span>' : ageHours < 3 ? '<span class="news-fresh-badge fresh-3h">NEW</span>' : '';
+    const timeStr = ts ? new Date(ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+    const freshDot = ageHours < 1 ? '<span class="nl-live">LIVE</span>' : ageHours < 3 ? '<span class="nl-new">NEW</span>' : '';
     const src = n.source || n.publisher || '';
     const isX = src.startsWith('X:');
-    const srcDisplay = isX ? src.replace('X:', '𝕏 ') : src;
-    const srcClass = src.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const cats = (n.categories || []);
-    const catBadges = cats.map(c => {
-      const labels = { breaking: '🔴 Breaking', geo: '🌍 Geo', market: '📊 Market', portfolio: '💼 Portfolio' };
-      return labels[c] ? `<span class="news-cat-badge ${c}">${labels[c]}</span>` : '';
-    }).join('');
-    const relatedSym = n.relatedSymbol ? `<button class="news-sym-pill" onclick="showNewsModal('${n.relatedSymbol}')">${n.relatedSymbol}</button>` : '';
+    const srcDisplay = isX ? '𝕏 ' + src.replace('X:','').replace('@','') : src;
+    const srcClass = src.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
+    const cats = n.categories || [];
+    const breaking = cats.includes('breaking'), portfolio = cats.includes('portfolio');
     const newsKey = (n.title || '').slice(0, 30);
-    const userBoost = newsClickHistory[newsKey] ? '⭐' : '';
+    recordNewsClick; // no-op reference to keep fn available
 
-    return `
-      <div class="latest-news-item${cats.includes('breaking') ? ' news-breaking' : cats.includes('portfolio') ? ' news-portfolio' : ''}">
-        <div class="latest-news-top">
-          <span class="latest-news-source ${srcClass}">${srcDisplay}</span>
-          ${freshBadge}
-          ${catBadges}
-          ${relatedSym}
-          ${userBoost}
-        </div>
-        <div class="latest-news-title">
-          <a href="${n.link}" target="_blank" rel="noopener" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}', ${JSON.stringify(cats)})">${n.title}</a>
-        </div>
-        ${n.description ? `<div class="latest-news-desc">${n.description.slice(0, 160)}…</div>` : ''}
-        <div class="latest-news-time">${date}</div>
-        ${buildNewsActionBtns(n.title, n.link, src, n.publishedAt)}
-      </div>`;
+    return `<div class="nl-item${breaking ? ' nl-breaking' : portfolio ? ' nl-portfolio' : ''}">
+      <span class="nl-src ${srcClass}">${srcDisplay}</span>${freshDot}${n.relatedSymbol ? `<button class="news-sym-pill" onclick="showNewsModal('${n.relatedSymbol}')">${n.relatedSymbol}</button>` : ''}
+      <a class="nl-title" href="${n.link}" target="_blank" rel="noopener" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${JSON.stringify(cats)})">${n.title}</a>
+      <span class="nl-time">${timeStr}</span>
+    </div>`;
   }).join('');
 }
 
@@ -3275,6 +3263,17 @@ async function loadDashboardNews() {
 }
 
 /* ─── CRYPTO DASHBOARD ───────────────────────────────────────── */
+let _cryptoTableZoom = 1.0;
+function adjustCryptoZoom(delta) {
+  _cryptoTableZoom = Math.max(0.65, Math.min(1.25, parseFloat((_cryptoTableZoom + delta).toFixed(2))));
+  const wrap = document.querySelector('.lcw-table-scroll-wrap');
+  if (wrap) {
+    wrap.style.fontSize = (_cryptoTableZoom * 13) + 'px';
+    const label = document.getElementById('crypto-zoom-label');
+    if (label) label.textContent = Math.round(_cryptoTableZoom * 100) + '%';
+  }
+}
+
 async function renderCryptoDashboard() {
   const grid = document.getElementById('crypto-grid');
   if (!grid) return;
@@ -3292,6 +3291,9 @@ async function renderCryptoDashboard() {
   const subtitle = document.getElementById('crypto-subtitle');
   if (subtitle) subtitle.textContent = `${state.cryptoData.length} coins · Updated ${new Date().toLocaleTimeString()}`;
 
+  // Re-render crypto ticker now that data is loaded
+  if (!tickerState.crypto?.articles?.length) renderTickerMarquee('crypto');
+
   // Apply filter mode
   let visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
   if (state.cryptoFilterMode === 'favorites') {
@@ -3303,6 +3305,9 @@ async function renderCryptoDashboard() {
   visibleCoins = visibleCoins.sort((a, b) => (a.rank || 999) - (b.rank || 999));
   _updateCryptoFilterBtns();
   const mode = state.cryptoViewMode;
+  // Show/hide zoom controls based on mode
+  const zoomCtrl = document.getElementById('crypto-zoom-controls');
+  if (zoomCtrl) zoomCtrl.style.display = mode === 'detailed' ? 'flex' : 'none';
   // Lazy-load 6M change data in background for visible coins (first 16)
   setTimeout(() => _preload6MChange(visibleCoins.slice(0, 16)), 1500);
   const newsSection = document.getElementById('crypto-news-section');
@@ -3315,6 +3320,8 @@ async function renderCryptoDashboard() {
     setTimeout(() => setCryptoChartPeriod(state.cryptoChartPeriod), 50);
     // Preload extended perf data (YTD, 2Y, 3Y) in background
     setTimeout(() => _preloadCryptoExtPerf(visibleCoins.slice(0, 20)), 500);
+    // Apply zoom if previously set
+    setTimeout(() => adjustCryptoZoom(0), 80);
   } else if (mode === 'heatmap') {
     grid.className = 'crypto-heatmap-container';
     grid.innerHTML = `<div id="tv-crypto-heatmap-container" class="maps-widget-container" style="height:calc(100vh - 205px);min-height:500px"></div>`;
@@ -3921,6 +3928,9 @@ async function setCryptoChartPeriod(period) {
 function switchCryptoView(mode) {
   state.cryptoViewMode = mode;
   document.querySelectorAll('#crypto-view-toggle .view-toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  // Show zoom controls only in detailed mode
+  const zoomCtrl = document.getElementById('crypto-zoom-controls');
+  if (zoomCtrl) zoomCtrl.style.display = mode === 'detailed' ? 'flex' : 'none';
   renderCryptoDashboard();
 }
 
@@ -4216,20 +4226,24 @@ async function _showSectorPopup(anchorEl, symbol, name) {
     </div>`;
   popup.classList.add('snp-active');
 
-  // Load sparkline chart for this ETF (3M)
+  // Load sparkline chart for this ETF (3-month)
   try {
     const chartData = await api('GET', `/stock/${encodeURIComponent(symbol)}/chart?range=3mo`);
     const chartEl = document.getElementById(`snp-chart-${symbol}`);
     if (chartEl && popup.classList.contains('snp-active')) {
-      const prices = (chartData.dataPoints || []).map(p => p.close).filter(Boolean);
-      if (prices.length > 1) {
+      const prices = (chartData.dataPoints || []).map(p => p.close).filter(v => v != null && v > 0);
+      if (prices.length > 2) {
         const svg = buildSparklineSVG(prices, 532, 100, '#77DD77', '#FF6B6B');
-        chartEl.innerHTML = svg || '<div class="snp-chart-loading">No chart data</div>';
+        if (svg) { chartEl.innerHTML = svg; }
+        else { chartEl.style.display = 'none'; } // hide empty placeholder
       } else {
-        chartEl.innerHTML = '<div class="snp-chart-loading">No chart data</div>';
+        chartEl.style.display = 'none'; // no data — hide cleanly instead of showing blank
       }
     }
-  } catch { const el = document.getElementById(`snp-chart-${symbol}`); if (el) el.innerHTML = '<div class="snp-chart-loading">Chart unavailable</div>'; }
+  } catch {
+    const el = document.getElementById(`snp-chart-${symbol}`);
+    if (el) el.style.display = 'none'; // hide rather than show ugly error
+  }
 
   // Lazy-load news (try stock news endpoint, fall back to latest)
   try {

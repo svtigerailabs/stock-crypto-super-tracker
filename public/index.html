@@ -350,6 +350,13 @@
           <button class="view-toggle-btn" data-mode="grid" onclick="switchCryptoView('grid')" title="Card View">⊞</button>
           <button class="view-toggle-btn active" data-mode="detailed" onclick="switchCryptoView('detailed')" title="Detailed Table">📋</button>
         </div>
+        <!-- Zoom controls (only shown in detailed mode) -->
+        <div class="crypto-zoom-controls" id="crypto-zoom-controls">
+          <button class="crypto-zoom-btn" onclick="adjustCryptoZoom(-0.1)" title="Zoom Out">−</button>
+          <span class="crypto-zoom-label" id="crypto-zoom-label">100%</span>
+          <button class="crypto-zoom-btn" onclick="adjustCryptoZoom(0.1)" title="Zoom In">＋</button>
+          <button class="crypto-zoom-btn" onclick="_cryptoTableZoom=1.0;adjustCryptoZoom(0)" title="Reset Zoom">⊙</button>
+        </div>
         <button class="btn-secondary" onclick="refreshCrypto()">🔄 Refresh</button>
       </div>
     </div>

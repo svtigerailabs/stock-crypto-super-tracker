@@ -673,7 +673,7 @@ async function fetchMarketIndex() {
 
 // ── Chart data (any time period) ──
 const chartCache = {};
-const CHART_RANGES = { '1d':'5m', '7d':'15m', '5d':'15m', '1mo':'1d', 'ytd':'1d', '1y':'1d', '2y':'1wk', '3y':'1wk', '5y':'1wk', 'max':'1mo' };
+const CHART_RANGES = { '1d':'5m', '7d':'15m', '5d':'15m', '1mo':'1d', '3mo':'1d', 'ytd':'1d', '1y':'1d', '2y':'1wk', '3y':'1wk', '5y':'1wk', 'max':'1mo' };
 
 async function yfChart(symbol, range, interval) {
   const key = `${symbol}:${range}`;
