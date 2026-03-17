@@ -186,13 +186,11 @@ html, body {
 .edit-mode .stock-card,
 .edit-mode .rich-card,
 .edit-mode .lcw-row,
-#crypto-grid.edit-mode .crypto-compact-card,
 #crypto-grid.edit-mode .crypto-card,
 #crypto-grid.edit-mode .lcw-row { border: 1px dashed var(--orange) !important; cursor: grab; }
 .edit-mode .stock-card:active,
 .edit-mode .rich-card:active,
 .edit-mode .lcw-row:active,
-#crypto-grid.edit-mode .crypto-compact-card:active,
 #crypto-grid.edit-mode .crypto-card:active { cursor: grabbing; }
 .card-delete-btn {
   position: absolute; top: -8px; right: -8px;
@@ -205,9 +203,9 @@ html, body {
 .card-delete-btn:hover { background: #da3633; }
 /* Dragging feedback for all card types */
 .stock-card.dragging, .rich-card.dragging, .lcw-row.dragging,
-.crypto-compact-card.dragging, .crypto-card.dragging { opacity: 0.35; }
+.crypto-card.dragging { opacity: 0.35; }
 .stock-card.drag-over, .rich-card.drag-over, .lcw-row.drag-over,
-.crypto-compact-card.drag-over, .crypto-card.drag-over { border-color: var(--blue) !important; background: rgba(88,166,255,.08) !important; }
+.crypto-card.drag-over { border-color: var(--blue) !important; background: rgba(88,166,255,.08) !important; }
 .active-edit { background: var(--orange) !important; border-color: var(--orange) !important; color: #000 !important; }
 /* Ensure lcw-row has relative positioning for delete button */
 .lcw-row { position: relative; }
@@ -869,8 +867,7 @@ html, body {
   transition: opacity 0.12s ease, visibility 0s linear 0.12s;
 }
 .crypto-hover-popup.visible,
-.crypto-card.popup-open .crypto-hover-popup,
-.crypto-compact-card.popup-open .crypto-hover-popup {
+.crypto-card.popup-open .crypto-hover-popup {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
@@ -905,27 +902,7 @@ html, body {
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 6px;
 }
-.crypto-compact-card {
-  display: flex; align-items: center; justify-content: space-between;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 6px; padding: 6px 10px;
-  cursor: pointer; transition: all .12s; position: relative; overflow: visible;
-}
-.crypto-compact-card::before {
-  content: ''; position: absolute; top: 0; left: 0;
-  width: 3px; height: 100%; background: var(--border);
-  border-radius: 6px 0 0 6px; transition: background .2s;
-}
-.crypto-compact-card.up::before { background: var(--green); }
-.crypto-compact-card.down::before { background: var(--red); }
-.crypto-compact-card:hover { border-color: var(--blue-dim); }
-.compact-card-left { display: flex; align-items: center; gap: 6px; }
-.compact-symbol { font-size: 12px; font-weight: 800; }
-.compact-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
-.compact-price { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.compact-change { font-size: 10px; font-weight: 600; }
-.compact-change.up { color: var(--green); }
-.compact-change.down { color: var(--red); }
+/* .crypto-compact-card styles removed — compact mode replaced by heatmap */
 .card-pin-btn {
   position: absolute; top: 2px; left: 18px;
   background: transparent; border: none; cursor: pointer;

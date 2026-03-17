@@ -416,7 +416,7 @@ function renderMarketIndexBar() {
       : item.price.toPrecision(4);
     const chgStr = `${absSign}${Math.abs(item.change) >= 1 ? item.change.toFixed(2) : item.change.toFixed(4)}`;
     const pctStr = `(${sign}${item.changePct.toFixed(2)}%)`;
-    const spark = buildSparklineSVG(item.sparkline || [], 88, 32, '#3fb950', '#f85149');
+    const spark = buildSparklineSVG(item.sparkline || [], 88, 32, '#77DD77', '#FF6B6B');
 
     // Pre-market / futures indicator
     let futuresHtml = '';
@@ -686,8 +686,8 @@ async function loadIndexModalChart(symbol) {
     const perf = ((last - basePrice) / basePrice * 100);
     const perfSign = perf >= 0 ? '+' : '';
     const dir = perf >= 0 ? 'up' : 'down';
-    const color = dir === 'up' ? '#3fb950' : '#f85149';
-    const fillColor = dir === 'up' ? '#3fb95018' : '#f8514918';
+    const color = dir === 'up' ? '#77DD77' : '#FF6B6B';
+    const fillColor = dir === 'up' ? '#77DD7718' : '#FF6B6B18';
 
     const priceStr = last >= 1000
       ? last.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -840,7 +840,7 @@ function buildStockCardRich(symbol) {
   const dir = typeof chg === 'number' ? (chg >= 0 ? 'up' : 'down') : '';
   const changeAbs = typeof s.change === 'number' ? `${s.change >= 0 ? '+' : ''}$${Math.abs(s.change).toFixed(2)}` : '';
   const vol = s.volume ? fmtVol(s.volume) : '—';
-  const spark = buildSparklineSVG(p.sparkline || [], 180, 40, '#3fb950', '#f85149');
+  const spark = buildSparklineSVG(p.sparkline || [], 180, 40, '#77DD77', '#FF6B6B');
   const mcap = p.marketCap || '—';
   const pe = p.trailingPE || '—';
   const w52h = p.week52High ? `$${p.week52High.toFixed(2)}` : '—';
@@ -926,7 +926,7 @@ function buildStockDetailedRow(symbol, rank) {
   const price = typeof s.price === 'number' ? `$${s.price.toFixed(2)}` : '—';
   const period = state.stockChartPeriod || '1mo';
   const chartData = state.stockCharts?.[symbol]?.[period] || p.sparkline || [];
-  const spark = buildSparklineSVG(chartData, 90, 26, '#3fb950', '#f85149');
+  const spark = buildSparklineSVG(chartData, 90, 26, '#77DD77', '#FF6B6B');
   const vol = s.volume ? fmtVol(s.volume) : (p.avgVolume || '—');
   const mcap = p.marketCap ? (typeof p.marketCap === 'number' ? fmtVol(p.marketCap) : p.marketCap) : '—';
   const perf = p._perf || {};
@@ -985,7 +985,7 @@ function updateStockDetailedRow(symbol) {
   const perf = p._perf || {};
   const period = state.stockChartPeriod || '1mo';
   const chartData = state.stockCharts?.[symbol]?.[period] || p.sparkline || [];
-  const spark = buildSparklineSVG(chartData, 90, 26, '#3fb950', '#f85149');
+  const spark = buildSparklineSVG(chartData, 90, 26, '#77DD77', '#FF6B6B');
   const vol = s.volume ? fmtVol(s.volume) : (p.avgVolume || '—');
   const mcap = p.marketCap ? (typeof p.marketCap === 'number' ? fmtVol(p.marketCap) : p.marketCap) : '—';
   const price = typeof s.price === 'number' ? `$${s.price.toFixed(2)}` : '—';
@@ -1028,7 +1028,7 @@ function buildStockListRow(symbol, rank) {
   const vol = s.volume ? fmtVol(s.volume) : '—';
   const ms = s.marketState || 'CLOSED';
   const p = state.profiles[symbol] || {};
-  const spark = buildSparklineSVG(p.sparkline || [], 80, 24, '#3fb950', '#f85149');
+  const spark = buildSparklineSVG(p.sparkline || [], 80, 24, '#77DD77', '#FF6B6B');
 
   return `
     <div class="stock-list-row" onclick="showNewsModal('${symbol}')" onmouseenter="lazyLoadHoverData('${symbol}')">
@@ -1194,7 +1194,7 @@ function renderHoverPopup(symbol, el) {
   const dir = typeof chg === 'number' ? (chg >= 0 ? 'up' : 'down') : '';
   const changeAbs = typeof s.change === 'number' ? `${s.change >= 0 ? '+' : ''}$${Math.abs(s.change).toFixed(2)}` : '';
 
-  const sparkline = buildSparklineSVG(p.sparkline, 640, 70, '#3fb950', '#f85149');
+  const sparkline = buildSparklineSVG(p.sparkline, 640, 70, '#77DD77', '#FF6B6B');
   const myAlerts = state.alerts.filter(a => a.symbol === symbol && a.isActive);
 
   // Multi-timeframe performance bar
@@ -1858,8 +1858,8 @@ async function loadChart(symbol, range = '1mo') {
     const perf = ((last - basePrice) / basePrice * 100).toFixed(2);
     const perfSign = perf >= 0 ? '+' : '';
     const dir = perf >= 0 ? 'up' : 'down';
-    const color = dir === 'up' ? '#3fb950' : '#f85149';
-    const fillColor = dir === 'up' ? '#3fb95018' : '#f8514918';
+    const color = dir === 'up' ? '#77DD77' : '#FF6B6B';
+    const fillColor = dir === 'up' ? '#77DD7718' : '#FF6B6B18';
 
     const W = 460, H = 140;
     const min = Math.min(...closes), max = Math.max(...closes);
@@ -3083,35 +3083,7 @@ async function renderCryptoDashboard() {
   }
 }
 
-function buildCryptoCompactCard(c) {
-  const dir = (c.change24h || 0) >= 0 ? 'up' : 'down';
-  const chg24 = c.change24h != null ? `${c.change24h >= 0 ? '+' : ''}${c.change24h.toFixed(2)}%` : '—';
-  const priceStr = cryptoPriceFmt(c.price);
-  const isPinned = state.pinnedCryptoIds.includes(c.id);
-  const deleteBtn = state.cryptoEditMode
-    ? `<button class="card-delete-btn" onclick="event.stopPropagation();hideCryptoCoin('${c.id}')" title="Hide">✕</button>`
-    : '';
-  const pinBtn = state.cryptoEditMode
-    ? `<button class="card-pin-btn${isPinned ? ' pinned' : ''}" onclick="event.stopPropagation();toggleCryptoPin('${c.id}')" title="${isPinned ? 'Unpin' : 'Pin to top'}">📌</button>`
-    : '';
-
-  return `
-    <div class="crypto-compact-card ${dir}"
-         onmouseenter="_scheduleShow(this,()=>showCryptoHover('${c.id}',this))"
-         onmouseleave="_scheduleHide(this,()=>hideCryptoHover(this))"
-         onclick="openCryptoDetailModal('${c.id}')">
-      ${deleteBtn}${pinBtn}
-      <div class="compact-card-left">
-        <img class="crypto-icon" src="${c.image}" alt="${c.symbol}" onerror="this.style.display='none'" />
-        <span class="compact-symbol">${c.symbol}</span>
-      </div>
-      <div class="compact-card-right">
-        <span class="compact-price">${priceStr}</span>
-        <span class="compact-change ${dir}">${chg24}</span>
-      </div>
-      <div class="crypto-hover-popup" id="crypto-hover-${c.id}" onclick="event.stopPropagation()"></div>
-    </div>`;
-}
+/* buildCryptoCompactCard removed — compact mode replaced by heatmap */
 
 function toggleCryptoPin(id) {
   if (!state.pinnedCryptoIds) state.pinnedCryptoIds = [];
@@ -3292,8 +3264,8 @@ async function loadCryptoPopupChart(id, range, btnEl, popupId) {
     const ptStr = prices.map((v, i) => `${(i * step).toFixed(1)},${toY(v).toFixed(1)}`).join(' ');
     const first = prices[0], last = prices[prices.length - 1];
     const up = last >= first;
-    const color = up ? '#3fb950' : '#f85149';
-    const fill = up ? '#3fb95018' : '#f8514918';
+    const color = up ? '#77DD77' : '#FF6B6B';
+    const fill = up ? '#77DD7718' : '#FF6B6B18';
     const baseY = toY(first).toFixed(1);
     chartEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block;background:var(--bg);border-radius:4px">
       <line x1="0" y1="${baseY}" x2="${W}" y2="${baseY}" stroke="#484f58" stroke-width="1" stroke-dasharray="3,3"/>
@@ -3466,7 +3438,7 @@ function cryptoPriceFmt(price) {
 
 /* ─── CRYPTO DETAILED TABLE (livecoinwatch style) ────────────── */
 function buildCryptoDetailedTable(coins) {
-  const period = state.cryptoChartPeriod || '7d';
+  const period = state.cryptoChartPeriod || '1d';
   const fmtPctCell = (val) => {
     if (val === null || val === undefined) return `<div class="lcw-col lcw-pct">—</div>`;
     const d = val >= 0 ? 'up' : 'down';
@@ -3575,7 +3547,7 @@ function showStockTableHover(symbol, rowEl) {
   const chgStr = typeof s.changePercent === 'number'
     ? `${s.changePercent >= 0 ? '+' : ''}${s.changePercent.toFixed(2)}% (1D)`
     : '—';
-  const sparkSvg = buildSparklineSVG(p.sparkline || [], 360, 60, '#3fb950', '#f85149');
+  const sparkSvg = buildSparklineSVG(p.sparkline || [], 360, 60, '#77DD77', '#FF6B6B');
   const fmtPct = (v, label) => {
     if (v == null) return `<div class="perf-item"><span class="perf-label">${label}</span><span class="perf-val">—</span></div>`;
     const d = v >= 0 ? 'up' : 'down';
@@ -3651,7 +3623,7 @@ function openCryptoDetailModal(id) {
   const priceStr = cryptoPriceFmt(c.price);
   const mcap = c.marketCap ? fmtVol(c.marketCap) : '—';
   const vol = c.volume24h ? fmtVol(c.volume24h) : '—';
-  const sparkSvg = buildSparklineSVG(c.sparkline, 560, 100, '#3fb950', '#f85149');
+  const sparkSvg = buildSparklineSVG(c.sparkline, 560, 100, '#77DD77', '#FF6B6B');
   const dir = (c.change24h || 0) >= 0 ? 'up' : 'down';
 
   // Build or reuse modal
@@ -3840,7 +3812,7 @@ async function setStockChartPeriod(period) {
       const cell = document.getElementById(`stock-chart-${symbol}`);
       if (cell) {
         const data = state.stockCharts[symbol][period];
-        cell.innerHTML = buildSparklineSVG(data, 90, 26, '#3fb950', '#f85149');
+        cell.innerHTML = buildSparklineSVG(data, 90, 26, '#77DD77', '#FF6B6B');
       }
       continue;
     }
@@ -3851,7 +3823,7 @@ async function setStockChartPeriod(period) {
       const cell = document.getElementById(`stock-chart-${symbol}`);
       if (cell) {
         const prices = state.stockCharts[symbol][period];
-        cell.innerHTML = buildSparklineSVG(prices, 90, 26, '#3fb950', '#f85149');
+        cell.innerHTML = buildSparklineSVG(prices, 90, 26, '#77DD77', '#FF6B6B');
       }
     } catch (_) { /* silent */ }
     await new Promise(r => setTimeout(r, 200));
@@ -4419,7 +4391,7 @@ function initTVScreener() {
   if (container) { delete container.dataset.initialized; container.innerHTML = ''; }
   const market = document.getElementById('screener-market')?.value || 'america';
   const col = document.getElementById('screener-column')?.value || 'overview';
-  const screen = document.getElementById('screener-screen')?.value || 'general';
+  const screen = document.getElementById('screener-screen')?.value || 'most_capitalized';
   _injectTVWidget('tv-screener-container', 'screener', {
     width: '100%',
     height: 650,
