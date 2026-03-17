@@ -1021,7 +1021,7 @@ async function fetchCryptoData() {
         change24h: q.percent_change_24h ?? null,
         change7d: q.percent_change_7d ?? null,
         change30d: q.percent_change_30d ?? null,
-        change200d: null,
+        change200d: q.percent_change_200d ?? null, // Coinpaprika provides this when available
         change1y: q.percent_change_1y ?? null,
         marketCap: q.market_cap,
         volume24h: q.volume_24h,
@@ -1481,7 +1481,8 @@ async function checkAlerts() {
       const price = quote.price;
 
       stockCache[symbol] = { ...stockCache[symbol], ...quote, lastUpdated: Date.now() };
-      io.emit('priceUpdate', { symbol, price, change: quote.change, changePercent: quote.changePercent, marketState: quote.marketState, timestamp: Date.now() });
+      // Send full quote so client can populate name, volume, type, etc. on first load
+      io.emit('priceUpdate', { ...stockCache[symbol], timestamp: Date.now() });
 
       // ── Price-based alerts ──
       for (const alert of active.filter(a => a.symbol === symbol && a.conditionType !== 'earnings_before')) {

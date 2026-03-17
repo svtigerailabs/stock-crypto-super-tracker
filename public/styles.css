@@ -1721,7 +1721,9 @@ html, body {
 .tv-quick-btn:hover { background: rgba(88,166,255,.12); color: var(--blue); border-color: var(--blue); }
 
 /* ── Market Maps ── */
-.maps-view-fullscreen { display: flex; flex-direction: column; }
+/* NOTE: display:none inherited from .view; only set flex when active */
+.maps-view-fullscreen { flex-direction: column; }
+.maps-view-fullscreen.active { display: flex; }
 .maps-header {
   display: flex; align-items: center; gap: 16px;
   padding: 10px 16px 8px; flex-wrap: wrap;

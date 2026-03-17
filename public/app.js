@@ -52,6 +52,16 @@ async function init() {
   setInterval(_preloadStockCharts, 30 * 60 * 1000);
   setTimeout(_preloadCryptoCharts, 8000);
   setInterval(_preloadCryptoCharts, 5 * 60 * 1000);
+
+  // Eagerly load all stock profiles so data columns populate on first view
+  setTimeout(() => loadProfilesBatch(getDashSymbols()), 3000);
+  // Refresh profiles every 15 min to keep data current
+  setInterval(() => {
+    // Clear cache so profiles refresh
+    const syms = getDashSymbols();
+    syms.forEach(s => { if (state.profiles[s]) state.profiles[s]._fetchedAt = 0; });
+    loadProfilesBatch(syms);
+  }, 15 * 60 * 1000);
 }
 
 async function _preloadStockCharts() {
@@ -103,7 +113,13 @@ async function _preload6MChange(coins) {
 async function _preloadCryptoCharts() {
   if (!state.cryptoData?.length) return;
   const period = state.cryptoChartPeriod || '7d';
-  const coins = state.cryptoData.slice(0, 20); // top 20
+  // Cover all visible coins (up to 30), prioritising DEFAULT_CRYPTO_SYMBOLS
+  const defaultIds = DEFAULT_CRYPTO_SYMBOLS.map(s => s.toLowerCase());
+  const allCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds?.includes(c.id));
+  const priority = allCoins.filter(c => defaultIds.some(d => c.id.startsWith(d)));
+  const rest = allCoins.filter(c => !priority.includes(c)).slice(0, 14);
+  const coins = [...priority, ...rest].slice(0, 30);
+
   for (const c of coins) {
     if (state.cryptoCharts[c.id]?.[period]) continue;
     try {
@@ -111,8 +127,14 @@ async function _preloadCryptoCharts() {
       if (!Array.isArray(prices) || !prices.length) continue;
       if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
       state.cryptoCharts[c.id][period] = prices;
+      // Update chart cell in-place if crypto table is visible
+      const chartCell = document.getElementById(`crypto-chart-${c.id}`);
+      if (chartCell && state.cryptoViewMode === 'detailed') {
+        const spark = prices.length > 50 ? prices.filter((_, i) => i % Math.ceil(prices.length / 50) === 0) : prices;
+        chartCell.innerHTML = buildSparklineSVG(spark, 130, 32, '#3fb950', '#f85149');
+      }
     } catch {}
-    await new Promise(r => setTimeout(r, 2000)); // CoinGecko rate-limit
+    await new Promise(r => setTimeout(r, 1500)); // rate-limit
   }
 }
 
@@ -175,9 +197,12 @@ function initSocket() {
     renderAll();
   });
 
-  socket.on('priceUpdate', ({ symbol, price, change, changePercent, marketState, timestamp }) => {
+  socket.on('priceUpdate', (data) => {
+    const { symbol, timestamp } = data;
+    if (!symbol) return;
     if (!state.stocks[symbol]) state.stocks[symbol] = {};
-    Object.assign(state.stocks[symbol], { price, change, changePercent, marketState, lastUpdated: timestamp });
+    // Merge full quote data (name, volume, type, price, change, etc.)
+    Object.assign(state.stocks[symbol], data, { lastUpdated: timestamp || Date.now() });
     updateStockCard(symbol);
     updateLastCheck();
   });
@@ -668,16 +693,16 @@ function renderDashboard() {
   if (mode === 'cards') {
     grid.className = 'stocks-grid stocks-grid-cards';
     grid.innerHTML = symbols.map(sym => buildStockCardRich(sym)).join('');
-    // Lazy-load sparklines for cards (staggered to avoid API flood)
     loadProfilesBatch(symbols);
   } else if (mode === 'detailed') {
     grid.className = 'stocks-list';
     grid.innerHTML = buildStockDetailedTable(symbols);
-    // Lazy-load perf data for detailed table
     symbols.forEach(sym => loadStockPerfForTable(sym));
   } else {
     grid.className = 'stocks-grid';
     grid.innerHTML = symbols.map(sym => buildStockCard(sym)).join('');
+    // Also load profiles for grid view so MCap/PE/52w populate
+    loadProfilesBatch(symbols);
   }
 }
 
@@ -3333,10 +3358,10 @@ function buildCryptoDetailedTable(coins) {
     const athStr = c.ath ? cryptoPriceFmt(c.ath) : '—';
     const athPct = c.athChangePercent != null ? c.athChangePercent.toFixed(1) + '%' : '—';
     const athDir = (c.athChangePercent || 0) >= 0 ? 'up' : 'down';
-    // Use period-specific chart if cached, else 7d sparkline
-    const chartData = (period === '7d' || !state.cryptoCharts?.[c.id]?.[period])
-      ? c.sparkline || []
-      : state.cryptoCharts[c.id][period];
+    // Use cached chart data for the current period; fall back to coinpaprika sparkline
+    const chartData = state.cryptoCharts?.[c.id]?.[period]?.length
+      ? state.cryptoCharts[c.id][period]
+      : (c.sparkline || []);
     const spark = chartData.length > 50 ? chartData.filter((_, i) => i % Math.ceil(chartData.length / 50) === 0) : chartData;
     const sparkSvg = buildSparklineSVG(spark, 130, 32, '#3fb950', '#f85149');
     // Popup container
