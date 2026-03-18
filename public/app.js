@@ -468,12 +468,20 @@ async function loadMarketIndex() {
     renderTickerMarquee('stock');
   } catch (e) {
     renderTickerMarquee('stock'); // render with whatever we have
+    const bar = document.getElementById('market-index-bar');
+    if (bar && !marketIndexData.length) {
+      bar.innerHTML = `<div class="mkt-idx-loading" style="cursor:pointer;color:var(--text-dim)" onclick="loadMarketIndex()">⚠ Market data unavailable — tap to retry</div>`;
+    }
   }
 }
 
 function renderMarketIndexBar() {
   const bar = document.getElementById('market-index-bar');
-  if (!bar || !marketIndexData.length) return;
+  if (!bar) return;
+  if (!marketIndexData.length) {
+    bar.innerHTML = `<div class="mkt-idx-loading" style="cursor:pointer;color:var(--text-dim)" onclick="loadMarketIndex()">⚠ Market data unavailable — tap to retry</div>`;
+    return;
+  }
 
   // Gold (GC=F) and BTC-USD trade nearly 24/7 — override misleading CLOSED state
   const ALWAYS_ON = new Set(['GC=F', 'BTC-USD']);

@@ -1088,7 +1088,7 @@ html, body {
 }
 /* Stock table: #, stock, price, 1D-3Y (8cols), SinceIPO, Listed, cap, vol, chart */
 .lcw-stock .lcw-header {
-  grid-template-columns: 32px 110px 82px repeat(8, 54px) 64px 58px 72px 60px 110px;
+  grid-template-columns: 32px 110px 82px repeat(8, 54px) 80px 50px 62px 52px 110px;
 }
 
 .lcw-row {
@@ -1099,7 +1099,7 @@ html, body {
   font-size: 12px; transition: background .1s; cursor: pointer;
 }
 .lcw-stock .lcw-row {
-  grid-template-columns: 32px 110px 82px repeat(8, 54px) 64px 58px 72px 60px 110px;
+  grid-template-columns: 32px 110px 82px repeat(8, 54px) 80px 50px 62px 52px 110px;
   font-size: 11px;
 }
 .lcw-date { text-align: right; font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
