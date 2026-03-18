@@ -40,7 +40,7 @@ async function init() {
   } catch (e) { console.warn('Init load failed:', e.message); }
 
   buildConditionRows();
-  initSocket();
+  try { initSocket(); } catch(e) { console.warn('Socket.io unavailable:', e.message); }
   renderAll();
   applySettings(state.settings);
   updateMuteBtn();
@@ -296,6 +296,7 @@ function buildSparklineSVG(data, width, height, colorUp, colorDown) {
 
 /* ─── SOCKET.IO ───────────────────────────────────────────────── */
 function initSocket() {
+  if (typeof io === 'undefined') { console.warn('socket.io not loaded — real-time updates disabled'); return; }
   socket = io();
   socket.on('connect', () => setConnectionStatus(true));
   socket.on('disconnect', () => setConnectionStatus(false));
@@ -3369,7 +3370,7 @@ async function renderCryptoDashboard() {
   } else {
     grid.className = 'stocks-grid';
     grid.innerHTML = visibleCoins.map(c => buildCryptoCard(c)).join('');
-    if (newsSection) newsSection.style.display = 'none';
+    if (newsSection) newsSection.style.display = '';  // show news panel in card view
   }
 }
 
@@ -3423,6 +3424,7 @@ async function loadCryptoNews(forceRefresh = false) {
 function renderCryptoNewsCards() {
   const section = document.getElementById('crypto-news-section');
   if (!section) return;
+  section.style.display = '';  // ensure section is visible
 
   let articles = _cryptoNewsCache;
 
