@@ -291,6 +291,24 @@ async function yfProfile(symbol) {
         }
       } catch { perfResults[label] = null; }
     }
+    // Inception: fetch max range, compute first-price → current return + extract IPO date
+    try {
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1mo&range=max`, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
+      if (r.ok) {
+        const j = await r.json();
+        const res0 = j.chart?.result?.[0];
+        const closes = res0?.indicators?.quote?.[0]?.close?.filter(v => v != null) || [];
+        const meta = res0?.meta || {};
+        const cur = meta.regularMarketPrice;
+        const firstPrice = closes[0];
+        if (firstPrice && cur) perfResults['Inception'] = ((cur - firstPrice) / firstPrice) * 100;
+        else perfResults['Inception'] = null;
+        if (meta.firstTradeDate) {
+          const d = new Date(meta.firstTradeDate * 1000);
+          result.ipoDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        }
+      }
+    } catch { perfResults['Inception'] = null; }
     result._perf = perfResults;
   } catch { /* skip */ }
 

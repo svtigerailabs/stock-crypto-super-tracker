@@ -1014,7 +1014,7 @@ function calc52wPct(price, low, high) {
 /* ─── STOCK DETAILED TABLE (Dashboard 3 — livecoinwatch style) ── */
 function buildStockDetailedTable(symbols) {
   const period = state.stockChartPeriod || '1d';
-  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['max','Inception']].map(([p, label]) =>
+  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['max','Max']].map(([p, label]) =>
     `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="event.stopPropagation();setStockChartPeriod('${p}')">${label}</button>`
   ).join('');
   return `
@@ -1032,6 +1032,8 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
+        <div class="lcw-col lcw-pct">Since IPO</div>
+        <div class="lcw-col lcw-date">Listed</div>
         <div class="lcw-col lcw-mcap">Cap</div>
         <div class="lcw-col lcw-vol">Vol</div>
         <div class="lcw-col lcw-chart"><span class="chart-period-toggle">${periodBtns}</span></div>
@@ -1078,6 +1080,8 @@ function buildStockDetailedRow(symbol, rank) {
       ${pctCell(perf['1Y'])}
       ${pctCell(perf['2Y'])}
       ${pctCell(perf['3Y'])}
+      ${pctCell(perf['Inception'])}
+      <div class="lcw-col lcw-date">${p.ipoDate || '—'}</div>
       <div class="lcw-col lcw-mcap">${mcap}</div>
       <div class="lcw-col lcw-vol">${vol}</div>
       <div class="lcw-col lcw-chart" id="stock-chart-${symbol}">${spark}</div>
@@ -1133,6 +1137,8 @@ function updateStockDetailedRow(symbol) {
     ${pctCell(perf['1Y'])}
     ${pctCell(perf['2Y'])}
     ${pctCell(perf['3Y'])}
+    ${pctCell(perf['Inception'])}
+    <div class="lcw-col lcw-date">${p.ipoDate || '—'}</div>
     <div class="lcw-col lcw-mcap">${mcap}</div>
     <div class="lcw-col lcw-vol">${vol}</div>
     <div class="lcw-col lcw-chart" id="stock-chart-${symbol}">${spark}</div>
@@ -2995,21 +3001,21 @@ async function renderCryptoNewsView() {
         <button class="btn-secondary" onclick="loadCryptoNews(true).then(renderCryptoNewsView)">🔄 Refresh</button>
       </div>
     </div>
-    <!-- category filter (Breaking) -->
-    <div class="news-controls-compact" id="crypto-news-cat-bar" style="margin-bottom:8px">
+    <!-- combined filter row: Breaking + sources on one line -->
+    <div class="news-controls-compact" id="crypto-news-cat-bar" style="margin-bottom:10px">
       <div class="news-ctrl-group">
-        <button class="news-chip ${_cryptoNewsViewCatFilter==='all'?'active':''}" data-cat="all" onclick="setCryptoNewsCatFilter('all')">All</button>
         <button class="news-chip ${_cryptoNewsViewCatFilter==='breaking'?'active':''}" data-cat="breaking" onclick="setCryptoNewsCatFilter('breaking')">🔴 Breaking</button>
+        <button class="news-chip ${_cryptoNewsViewCatFilter==='all'?'active':''}" data-cat="all" onclick="setCryptoNewsCatFilter('all')">All</button>
       </div>
-    </div>
-    <!-- source filter tabs -->
-    <div class="news-source-tabs" id="crypto-news-tabs">
-      <button class="news-tab active" data-src="CoinTelegraph" onclick="setCryptoNewsFilter('CoinTelegraph')">CoinTelegraph</button>
-      <button class="news-tab" data-src="CoinDesk" onclick="setCryptoNewsFilter('CoinDesk')">CoinDesk</button>
-      <button class="news-tab" data-src="Decrypt" onclick="setCryptoNewsFilter('Decrypt')">Decrypt</button>
-      <button class="news-tab" data-src="Bitcoin Magazine" onclick="setCryptoNewsFilter('Bitcoin Magazine')">Bitcoin Mag</button>
-      <button class="news-tab" data-src="Google News" onclick="setCryptoNewsFilter('Google News')">Google News</button>
-      <button class="news-tab" data-src="x" onclick="setCryptoNewsFilter('x')">𝕏 Twitter</button>
+      <div class="news-ctrl-divider"></div>
+      <div class="news-ctrl-group" id="crypto-news-tabs">
+        <button class="news-tab" data-src="CoinTelegraph" onclick="setCryptoNewsFilter('CoinTelegraph')">CoinTelegraph</button>
+        <button class="news-tab" data-src="CoinDesk" onclick="setCryptoNewsFilter('CoinDesk')">CoinDesk</button>
+        <button class="news-tab" data-src="Decrypt" onclick="setCryptoNewsFilter('Decrypt')">Decrypt</button>
+        <button class="news-tab" data-src="Bitcoin Magazine" onclick="setCryptoNewsFilter('Bitcoin Magazine')">Bitcoin Mag</button>
+        <button class="news-tab" data-src="Google News" onclick="setCryptoNewsFilter('Google News')">Google News</button>
+        <button class="news-tab" data-src="x" onclick="setCryptoNewsFilter('x')">𝕏 Twitter</button>
+      </div>
     </div>
     <div id="crypto-news-view-list" class="latest-news-list">
       <div class="news-loading">Loading crypto news…</div>
