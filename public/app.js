@@ -20,7 +20,7 @@ const state = {
   pinnedCryptoIds: JSON.parse(localStorage.getItem('pinnedCryptoIds') || '[]'),
   favoriteCryptoIds: JSON.parse(localStorage.getItem('favoriteCryptoIds') || '[]'),
   cryptoFilterMode: localStorage.getItem('cryptoFilterMode') || 'default',
-  stockChartPeriod: '1mo', stockCharts: {},
+  stockChartPeriod: '1d', stockCharts: {},
   alertsMuted: localStorage.getItem('alertsMuted') === 'true',
 };
 let socket = null;
@@ -1013,8 +1013,8 @@ function calc52wPct(price, low, high) {
 
 /* ─── STOCK DETAILED TABLE (Dashboard 3 — livecoinwatch style) ── */
 function buildStockDetailedTable(symbols) {
-  const period = state.stockChartPeriod || 'ytd';
-  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['2y','2Y'],['3y','3Y']].map(([p, label]) =>
+  const period = state.stockChartPeriod || '1d';
+  const periodBtns = [['1d','1D'],['7d','7D'],['1mo','1M'],['3mo','3M'],['ytd','YTD'],['1y','1Y'],['max','Inception']].map(([p, label]) =>
     `<button class="chart-period-btn${p === period ? ' active' : ''}" onclick="event.stopPropagation();setStockChartPeriod('${p}')">${label}</button>`
   ).join('');
   return `
@@ -1031,6 +1031,7 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-pct">YTD</div>
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
+        <div class="lcw-col lcw-pct">3Y</div>
         <div class="lcw-col lcw-mcap">Cap</div>
         <div class="lcw-col lcw-vol">Vol</div>
         <div class="lcw-col lcw-chart"><span class="chart-period-toggle">${periodBtns}</span></div>
@@ -1076,6 +1077,7 @@ function buildStockDetailedRow(symbol, rank) {
       ${pctCell(perf['YTD'])}
       ${pctCell(perf['1Y'])}
       ${pctCell(perf['2Y'])}
+      ${pctCell(perf['3Y'])}
       <div class="lcw-col lcw-mcap">${mcap}</div>
       <div class="lcw-col lcw-vol">${vol}</div>
       <div class="lcw-col lcw-chart" id="stock-chart-${symbol}">${spark}</div>
@@ -1130,6 +1132,7 @@ function updateStockDetailedRow(symbol) {
     ${pctCell(perf['YTD'])}
     ${pctCell(perf['1Y'])}
     ${pctCell(perf['2Y'])}
+    ${pctCell(perf['3Y'])}
     <div class="lcw-col lcw-mcap">${mcap}</div>
     <div class="lcw-col lcw-vol">${vol}</div>
     <div class="lcw-col lcw-chart" id="stock-chart-${symbol}">${spark}</div>
@@ -3573,7 +3576,7 @@ function renderCryptoHoverPopup(c, el) {
       </div>
     </div>
     <div class="perf-bar">
-      ${[['1H', c.change1h], ['24H', c.change24h], ['7D', c.change7d], ['30D', c.change30d], ['1Y', c.change1y]].map(([l, v]) => {
+      ${[['1H', c.change1h], ['24H', c.change24h], ['7D', c.change7d], ['30D', c.change30d], ['YTD', c.changeYtd], ['1Y', c.change1y]].map(([l, v]) => {
         if (v == null) return '';
         const d = v >= 0 ? 'up' : 'down';
         return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</span></div>`;
@@ -3727,7 +3730,7 @@ function buildCryptoDetailedTable(coins) {
       </div>`;
   }).join('');
 
-  const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M'],['180d','6M'],['365d','1Y'],['730d','2Y']].map(([p, label]) =>
+  const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M'],['180d','6M'],['ytd','YTD'],['365d','1Y'],['730d','2Y']].map(([p, label]) =>
     `<button class="chart-period-btn${p === period ? ' active' : ''}" data-period="${p}" onclick="event.stopPropagation();setCryptoChartPeriod('${p}')">${label}</button>`
   ).join('');
 
@@ -3800,6 +3803,7 @@ function showStockTableHover(symbol, rowEl) {
       ${fmtPct(perf['7D'], '7D')}
       ${fmtPct(perf['1M'], '1M')}
       ${fmtPct(perf['3M'], '3M')}
+      ${fmtPct(perf['YTD'], 'YTD')}
       ${fmtPct(perf['1Y'], '1Y')}
       ${fmtPct(perf['2Y'], '2Y')}
       ${fmtPct(perf['3Y'], '3Y')}
