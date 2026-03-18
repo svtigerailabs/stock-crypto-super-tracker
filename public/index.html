@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock & Crypto Super Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=20" />
+  <link rel="stylesheet" href="styles.css?v=21" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
 </head>
 <body>
@@ -110,16 +110,6 @@
         <button class="btn-sm-edit" id="edit-mode-btn" onclick="toggleEditMode()">✏️ Edit</button>
         <button class="btn-sm-edit" onclick="showSaveProfileModal()" title="Save current watchlist as a profile">💾 Save Profile</button>
         <button class="btn-sm-add" onclick="showAddAlertModal()">＋ Alert</button>
-      </div>
-    </div>
-
-    <!-- Headline Ticker Bar -->
-    <div class="headline-ticker" id="stock-headline-ticker">
-      <span class="ticker-label">📰 LIVE</span>
-      <div class="ticker-scroll-outer">
-        <div class="ticker-scroll-inner" id="stock-ticker-track">
-          <span class="ticker-loading">Loading headlines…</span>
-        </div>
       </div>
     </div>
 
@@ -367,15 +357,6 @@
           <button class="crypto-zoom-btn" onclick="_cryptoTableZoom=1.0;adjustCryptoZoom(0)" title="Reset Zoom">⊙</button>
         </div>
         <button class="btn-secondary" onclick="refreshCrypto()">🔄 Refresh</button>
-      </div>
-    </div>
-    <!-- Headline Ticker Bar -->
-    <div class="headline-ticker" id="crypto-headline-ticker">
-      <span class="ticker-label">₿ LIVE</span>
-      <div class="ticker-scroll-outer">
-        <div class="ticker-scroll-inner" id="crypto-ticker-track">
-          <span class="ticker-loading">Loading headlines…</span>
-        </div>
       </div>
     </div>
     <div id="crypto-grid" class="stocks-grid">
@@ -676,6 +657,6 @@
 <div id="toast-container" class="toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

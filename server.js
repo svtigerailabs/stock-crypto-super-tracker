@@ -270,7 +270,7 @@ async function yfProfile(symbol) {
 
   // 4) Multi-timeframe performance (price change %)
   try {
-    const perfRanges = { '1D': '1d', '7D': '5d', '1M': '1mo', '3M': '3mo', 'YTD': 'ytd', '1Y': '1y', '2Y': '2y', '3Y': '3y', '5Y': '5y' };
+    const perfRanges = { '1D': '1d', '7D': '5d', '1M': '1mo', '3M': '3mo', 'YTD': 'ytd', '1Y': '1y', '2Y': '2y', '3Y': '3y', '5Y': '5y', '10Y': '10y' };
     const perfResults = {};
     for (const [label, range] of Object.entries(perfRanges)) {
       try {
@@ -691,7 +691,7 @@ async function fetchMarketIndex() {
 
 // ── Chart data (any time period) ──
 const chartCache = {};
-const CHART_RANGES = { '1d':'5m', '7d':'15m', '5d':'15m', '1mo':'1d', '3mo':'1d', 'ytd':'1d', '1y':'1d', '2y':'1wk', '3y':'1wk', '5y':'1wk', 'max':'1mo' };
+const CHART_RANGES = { '1d':'5m', '7d':'15m', '5d':'15m', '1mo':'1d', '3mo':'1d', 'ytd':'1d', '1y':'1d', '2y':'1wk', '3y':'1wk', '5y':'1wk', '10y':'1mo', 'max':'1mo' };
 
 async function yfChart(symbol, range, interval) {
   const key = `${symbol}:${range}`;

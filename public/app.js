@@ -58,18 +58,6 @@ async function init() {
   }
   setTimeout(_smartMarketRefresh, 30000);
 
-  // Headline tickers
-  initHeadlineTickers().then(() => {
-    startTickerRotation('stock', 12);
-    startTickerRotation('crypto', 12);
-  });
-  // Safety net: if ticker is still showing "Loading" after 18s, force-render with whatever data is available
-  setTimeout(() => {
-    ['stock', 'crypto'].forEach(type => {
-      const track = document.getElementById(`${type}-ticker-track`);
-      if (track && track.querySelector('.ticker-loading')) renderTickerMarquee(type);
-    });
-  }, 18000);
 
   // Refresh dashboard news every 5 minutes
   setTimeout(loadDashboardNews, 4000);
@@ -128,7 +116,28 @@ async function _preloadStockCharts() {
 
 async function _preload6MChange(coins) {
   for (const c of coins) {
-    if (c.change6m != null) continue; // already computed
+    // Compute 90D from cached 90d chart or fetch it
+    if (c.change90d == null) {
+      if (state.cryptoCharts[c.id]?.['90d']?.length >= 2) {
+        const p90 = state.cryptoCharts[c.id]['90d'];
+        c.change90d = ((p90[p90.length-1] - p90[0]) / p90[0]) * 100;
+        const el = document.querySelector(`#lcw-crypto-${c.id} .lcw-90d-col`);
+        if (el) { const d = c.change90d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-90d-col`; el.textContent = `${c.change90d >= 0 ? '+' : ''}${c.change90d.toFixed(2)}%`; }
+      } else {
+        try {
+          const p90 = await api('GET', `/crypto/${c.id}/chart?range=90d`);
+          if (Array.isArray(p90) && p90.length >= 2) {
+            if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+            state.cryptoCharts[c.id]['90d'] = p90;
+            c.change90d = ((p90[p90.length-1] - p90[0]) / p90[0]) * 100;
+            const el = document.querySelector(`#lcw-crypto-${c.id} .lcw-90d-col`);
+            if (el) { const d = c.change90d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-90d-col`; el.textContent = `${c.change90d >= 0 ? '+' : ''}${c.change90d.toFixed(2)}%`; }
+          }
+        } catch {}
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    if (c.change6m != null) continue; // 6M already computed
     if (state.cryptoCharts[c.id]?.['180d']?.length >= 2) {
       const prices = state.cryptoCharts[c.id]['180d'];
       c.change6m = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
@@ -153,7 +162,7 @@ async function _preload6MChange(coins) {
         pctEl.textContent = `${c.change6m >= 0 ? '+' : ''}${c.change6m.toFixed(2)}%`;
       }
     } catch {}
-    await new Promise(r => setTimeout(r, 2000)); // CoinGecko/CryptoCompare rate limit
+    await new Promise(r => setTimeout(r, 2000));
   }
 }
 
@@ -531,10 +540,7 @@ async function loadMarketIndex() {
     const data = await api('GET', '/market-index');
     marketIndexData = data;
     renderMarketIndexBar();
-    // Always re-render ticker now that market prices are available
-    renderTickerMarquee('stock');
   } catch (e) {
-    renderTickerMarquee('stock'); // render with whatever we have
     const bar = document.getElementById('market-index-bar');
     if (bar && !marketIndexData.length) {
       bar.innerHTML = `<div class="mkt-idx-loading" style="cursor:pointer;color:var(--text-dim)" onclick="loadMarketIndex()">⚠ Market data unavailable — tap to retry</div>`;
@@ -1130,6 +1136,7 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
         <div class="lcw-col lcw-pct">5Y</div>
+        <div class="lcw-col lcw-pct">10Y</div>
         <div class="lcw-col lcw-pct">Since IPO</div>
         <div class="lcw-col lcw-date">Listed</div>
         <div class="lcw-col lcw-mcap">Cap</div>
@@ -1179,6 +1186,7 @@ function buildStockDetailedRow(symbol, rank) {
       ${pctCell(perf['2Y'])}
       ${pctCell(perf['3Y'])}
       ${pctCell(perf['5Y'])}
+      ${pctCell(perf['10Y'])}
       ${pctCell(perf['Inception'])}
       <div class="lcw-col lcw-date">${p.ipoDate || '—'}</div>
       <div class="lcw-col lcw-mcap">${mcap}</div>
@@ -1237,6 +1245,7 @@ function updateStockDetailedRow(symbol) {
     ${pctCell(perf['2Y'])}
     ${pctCell(perf['3Y'])}
     ${pctCell(perf['5Y'])}
+    ${pctCell(perf['10Y'])}
     ${pctCell(perf['Inception'])}
     <div class="lcw-col lcw-date">${p.ipoDate || '—'}</div>
     <div class="lcw-col lcw-mcap">${mcap}</div>
@@ -3456,8 +3465,6 @@ async function renderCryptoDashboard() {
   const subtitle = document.getElementById('crypto-subtitle');
   if (subtitle) subtitle.textContent = `${state.cryptoData.length} coins · Updated ${new Date().toLocaleTimeString()}`;
 
-  // Re-render crypto ticker now that coin price data is available
-  renderTickerMarquee('crypto');
 
   // Apply filter mode
   let visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
@@ -3827,6 +3834,7 @@ function buildCryptoDetailedTable(coins) {
         ${fmtPctCell(c.change24h)}
         ${fmtPctCell(c.change7d)}
         ${fmtPctCell(c.change30d)}
+        <div class="lcw-col lcw-pct lcw-90d-col${c.change90d != null ? (c.change90d >= 0 ? ' up' : ' down') : ''}">${c.change90d != null ? `${c.change90d >= 0 ? '+' : ''}${c.change90d.toFixed(2)}%` : '—'}</div>
         <div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}">${(c.change6m ?? c.change200d) != null ? `${(c.change6m ?? c.change200d) >= 0 ? '+' : ''}${(c.change6m ?? c.change200d).toFixed(2)}%` : '—'}</div>
         <div class="lcw-col lcw-pct lcw-ytd-col${c.changeYTD != null ? (c.changeYTD >= 0 ? ' up' : ' down') : ''}">${c.changeYTD != null ? `${c.changeYTD >= 0 ? '+' : ''}${c.changeYTD.toFixed(2)}%` : '—'}</div>
         ${fmtPctCell(c.change1y)}
@@ -3860,6 +3868,7 @@ function buildCryptoDetailedTable(coins) {
         <div class="lcw-col lcw-pct">24H</div>
         <div class="lcw-col lcw-pct">7D</div>
         <div class="lcw-col lcw-pct">30D</div>
+        <div class="lcw-col lcw-pct">90D</div>
         <div class="lcw-col lcw-pct">6M</div>
         <div class="lcw-col lcw-pct">YTD</div>
         <div class="lcw-col lcw-pct">1Y</div>

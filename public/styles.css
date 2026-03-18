@@ -1075,31 +1075,31 @@ html, body {
 .lcw-table-scroll-wrap::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 .lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 800px; }
 .lcw-crypto-table { min-width: 1330px; }
-/* Stock table: #, stock, price, 1D-3Y (9cols), 5Y, SinceIPO, Listed, cap, vol, chart */
-.lcw-stock { min-width: 1200px; }
+/* Stock table: #, stock, price, 1D-10Y (10 pct cols), SinceIPO, Listed, cap, vol, chart */
+.lcw-stock { min-width: 1240px; }
 
-/* Crypto table: #, ★icon, coin, price, ATH, ↑ATH, 1H-1Y(7), 2Y, 3Y, 5Y, SinceICO, Listed, cap, vol, chart */
+/* Crypto table: #, ★icon, coin, price, ATH, ↑ATH, 1H-1Y(8), 2Y, 3Y, 5Y, SinceICO, Listed, cap, vol, chart */
 .lcw-header {
   display: grid;
-  grid-template-columns: 28px 32px 80px 76px 84px 50px repeat(7, 54px) 64px 64px 64px 78px 48px 80px 68px 130px;
+  grid-template-columns: 28px 32px 80px 76px 84px 50px repeat(8, 54px) 64px 64px 64px 78px 48px 80px 68px 130px;
   gap: 0; padding: 8px 10px; font-size: 10px; font-weight: 800;
   color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px;
   background: var(--card); border-bottom: 2px solid var(--border);
 }
-/* Stock table: #, stock, price, 1D-3Y (9 pct cols), SinceIPO, Listed, cap, vol, chart */
+/* Stock table: #, stock, price, 1D-10Y (10 pct cols), SinceIPO, Listed, cap, vol, chart */
 .lcw-stock .lcw-header {
-  grid-template-columns: 32px 110px 82px repeat(9, 58px) 96px 50px 62px 52px 110px;
+  grid-template-columns: 32px 96px 82px repeat(10, 56px) 96px 50px 62px 52px 110px;
 }
 
 .lcw-row {
   display: grid;
-  grid-template-columns: 28px 32px 80px 76px 84px 50px repeat(7, 54px) 64px 64px 64px 78px 48px 80px 68px 130px;
+  grid-template-columns: 28px 32px 80px 76px 84px 50px repeat(8, 54px) 64px 64px 64px 78px 48px 80px 68px 130px;
   gap: 0; padding: 6px 10px; align-items: center;
   border-bottom: 1px solid #1c2128; background: var(--surface);
   font-size: 12px; transition: background .1s; cursor: pointer;
 }
 .lcw-stock .lcw-row {
-  grid-template-columns: 32px 110px 82px repeat(9, 58px) 96px 50px 62px 52px 110px;
+  grid-template-columns: 32px 96px 82px repeat(10, 56px) 96px 50px 62px 52px 110px;
   font-size: 11px;
 }
 .lcw-date { text-align: right; font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
