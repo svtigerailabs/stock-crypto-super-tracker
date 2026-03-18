@@ -1390,21 +1390,28 @@ const newsSummaryCache = { data: null, fetchedAt: 0 };
 const NEWS_SUMMARY_TTL = 6 * 60 * 60 * 1000;
 
 app.get('/api/news-summary', async (req, res) => {
-  if (!GEMINI_URL) return res.json({ available: false });
   if (newsSummaryCache.data && (Date.now() - newsSummaryCache.fetchedAt) < NEWS_SUMMARY_TTL) {
     return res.json(newsSummaryCache.data);
   }
+  const articles = (latestNewsCache.data || []).slice(0, 20);
+  if (!articles.length) return res.json({ available: false });
+
+  // Without Gemini: return top 3 headlines as a simple "pulse"
+  if (!GEMINI_URL) {
+    const top3 = articles.slice(0, 3).map(a => a.title);
+    const summary = { available: true, aiPowered: false, bullets: top3, sentiment: null, generatedAt: new Date().toISOString() };
+    newsSummaryCache.data = summary; newsSummaryCache.fetchedAt = Date.now();
+    return res.json(summary);
+  }
+
   try {
-    const articles = (latestNewsCache.data || []).slice(0, 20);
-    if (!articles.length) return res.json({ available: false });
     const headlines = articles.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
     const prompt = `You are a senior financial analyst. Summarize these market headlines into a concise briefing.\n\nHeadlines:\n${headlines}\n\nRespond ONLY with this exact JSON (no markdown):\n{"bullets":["theme 1 as one sentence","theme 2 as one sentence","theme 3 as one sentence"],"sentiment":"Bullish","sentimentReason":"one short sentence"}`;
     const text = await callGemini(prompt, 350);
     const match = text?.match(/\{[\s\S]*\}/);
     if (!match) return res.json({ available: false });
-    const summary = { ...JSON.parse(match[0]), available: true, generatedAt: new Date().toISOString() };
-    newsSummaryCache.data = summary;
-    newsSummaryCache.fetchedAt = Date.now();
+    const summary = { ...JSON.parse(match[0]), available: true, aiPowered: true, generatedAt: new Date().toISOString() };
+    newsSummaryCache.data = summary; newsSummaryCache.fetchedAt = Date.now();
     res.json(summary);
   } catch (e) {
     console.warn('News summary error:', e.message);
@@ -1416,8 +1423,25 @@ app.get('/api/news-summary', async (req, res) => {
 const whyMovingCache = {};
 const WHY_MOVING_TTL = 4 * 60 * 60 * 1000;
 
+// Keyword-based fallback when Gemini is not configured
+function guessWhyMoving(title, change) {
+  const t = (title || '').toLowerCase();
+  if (/earnings|beat|beats|eps|revenue|quarterly results/.test(t)) return change >= 0 ? 'Earnings beat' : 'Earnings miss';
+  if (/guidance|raised guidance|lowered guidance|outlook|forecast/.test(t)) return change >= 0 ? 'Raised guidance' : 'Lowered guidance';
+  if (/upgrade|outperform|buy rating|overweight/.test(t)) return 'Analyst upgrade';
+  if (/downgrade|underperform|sell rating|underweight/.test(t)) return 'Analyst downgrade';
+  if (/tariff|tariffs|trade war|sanction|trade tension/.test(t)) return 'Trade tensions';
+  if (/merger|acqui|buyout|takeover/.test(t)) return 'M&A activity';
+  if (/fda|drug approval|trial|clinical/.test(t)) return 'Drug/FDA news';
+  if (/sec|lawsuit|fraud|investigation|fine|penalty/.test(t)) return 'Regulatory news';
+  if (/layoff|job cut|restructur/.test(t)) return 'Restructuring news';
+  if (/dividend|buyback|split/.test(t)) return change >= 0 ? 'Shareholder return' : 'Capital event';
+  if (/ipo|listing|offering/.test(t)) return 'New offering';
+  if (/fed|interest rate|powell|fomc/.test(t)) return 'Fed/rate news';
+  return null;
+}
+
 app.get('/api/stock/:symbol/why-moving', async (req, res) => {
-  if (!GEMINI_URL) return res.json({ reason: null });
   const symbol = req.params.symbol.toUpperCase();
   const change = parseFloat(req.query.change) || 0;
   if (Math.abs(change) < 1.5) return res.json({ reason: null });
@@ -1428,19 +1452,24 @@ app.get('/api/stock/:symbol/why-moving', async (req, res) => {
   }
   try {
     const all = latestNewsCache.data || [];
-    const relevant = all
-      .filter(a => (a.title || '').toUpperCase().includes(symbol))
-      .slice(0, 6)
-      .map(a => `- ${a.title}`)
-      .join('\n');
-    if (!relevant) {
+    const relevant = all.filter(a => (a.title || '').toUpperCase().includes(symbol)).slice(0, 6);
+
+    if (!relevant.length) {
       whyMovingCache[symbol] = { reason: null, fetchedAt: Date.now() };
       return res.json({ reason: null });
     }
-    const dir = change >= 0 ? `up ${change.toFixed(1)}%` : `down ${Math.abs(change).toFixed(1)}%`;
-    const prompt = `Stock ${symbol} is ${dir} today. Give a VERY SHORT reason (3-5 words max) based on these headlines. Only output the short phrase, nothing else.\n\nHeadlines:\n${relevant}`;
-    const text = await callGemini(prompt, 25);
-    const reason = text?.replace(/["""*]/g, '').trim() || null;
+
+    // Try Gemini first; fall back to keyword heuristic
+    let reason = null;
+    if (GEMINI_URL) {
+      const headlines = relevant.map(a => `- ${a.title}`).join('\n');
+      const dir = change >= 0 ? `up ${change.toFixed(1)}%` : `down ${Math.abs(change).toFixed(1)}%`;
+      const prompt = `Stock ${symbol} is ${dir} today. Give a VERY SHORT reason (3-5 words max) based on these headlines. Only output the short phrase, nothing else.\n\nHeadlines:\n${headlines}`;
+      const text = await callGemini(prompt, 25);
+      reason = text?.replace(/["""*]/g, '').trim() || null;
+    }
+    if (!reason) reason = guessWhyMoving(relevant[0].title, change);
+
     whyMovingCache[symbol] = { reason, fetchedAt: Date.now() };
     res.json({ reason });
   } catch (e) {

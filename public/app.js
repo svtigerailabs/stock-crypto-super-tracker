@@ -1060,13 +1060,16 @@ function buildStockCardRich(symbol) {
   const w52h = p.week52High ? `$${p.week52High.toFixed(2)}` : '—';
   const w52l = p.week52Low ? `$${p.week52Low.toFixed(2)}` : '—';
 
-  // Perf bar from cached profile data
+  // Perf bar from cached profile data — card shows short-term only to keep compact
+  const CARD_PERF_KEYS = ['1D','7D','1M','3M','YTD','1Y'];
   const perf = p._perf || {};
-  const perfItems = Object.entries(perf).map(([label, val]) => {
-    if (val === null || val === undefined) return `<span class="rc-perf-item"><span class="rc-perf-label">${label}</span><span class="rc-perf-val">—</span></span>`;
-    const d = val >= 0 ? 'up' : 'down';
-    return `<span class="rc-perf-item"><span class="rc-perf-label">${label}</span><span class="rc-perf-val ${d}">${val >= 0 ? '+' : ''}${val.toFixed(1)}%</span></span>`;
-  }).join('');
+  const perfItems = Object.entries(perf)
+    .filter(([label]) => CARD_PERF_KEYS.includes(label))
+    .map(([label, val]) => {
+      if (val === null || val === undefined) return `<span class="rc-perf-item"><span class="rc-perf-label">${label}</span><span class="rc-perf-val">—</span></span>`;
+      const d = val >= 0 ? 'up' : 'down';
+      return `<span class="rc-perf-item"><span class="rc-perf-label">${label}</span><span class="rc-perf-val ${d}">${val >= 0 ? '+' : ''}${val.toFixed(1)}%</span></span>`;
+    }).join('');
 
   return `
     <div class="rich-card ${dir}" onclick="showStockDetailPopup('${symbol}')"
@@ -1344,12 +1347,20 @@ function positionStockPopup(cardEl) {
   const popup = cardEl.querySelector('.stock-card-detail');
   if (!popup) return;
   const rect = cardEl.getBoundingClientRect();
-  // Place horizontally near the card but keep within viewport
-  const popupWidth = 700;
+  const popupWidth = 820;
+  const popupHeight = 560;
+
+  // Horizontal: align with card, stay within viewport
   let left = rect.left;
   if (left + popupWidth > window.innerWidth - 10) left = window.innerWidth - popupWidth - 10;
-  if (left < 0) left = 0;
+  if (left < 230) left = 230; // don't overlap sidebar
+
+  // Vertical: prefer above the card; fall back to below if not enough space
+  let top = rect.top - popupHeight - 8;
+  if (top < 8) top = rect.bottom + 8;
+
   popup.style.left = left + 'px';
+  popup.style.top = top + 'px';
 }
 
 /* ─── LAZY-LOAD HOVER DATA ────────────────────────────────────── */
@@ -3091,20 +3102,29 @@ async function loadMarketPulse() {
   try {
     const data = await api('GET', '/news-summary');
     if (!data?.available) { card.innerHTML = ''; return; }
-    const sentimentColor = data.sentiment === 'Bullish' ? 'var(--green)' : data.sentiment === 'Bearish' ? 'var(--red)' : 'var(--orange)';
-    const sentimentIcon = data.sentiment === 'Bullish' ? '▲' : data.sentiment === 'Bearish' ? '▼' : '◆';
+
+    const isAI = data.aiPowered !== false; // true when Gemini key set
     const timeStr = data.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+
+    let headerRight = '';
+    if (isAI && data.sentiment) {
+      const sentimentColor = data.sentiment === 'Bullish' ? 'var(--green)' : data.sentiment === 'Bearish' ? 'var(--red)' : 'var(--orange)';
+      const sentimentIcon = data.sentiment === 'Bullish' ? '▲' : data.sentiment === 'Bearish' ? '▼' : '◆';
+      headerRight = `<span class="mp-sentiment" style="color:${sentimentColor}">${sentimentIcon} ${data.sentiment}</span>`;
+    }
+
     card.innerHTML = `
       <div class="market-pulse-card">
         <div class="mp-header">
-          <span class="mp-title">🤖 AI Market Pulse</span>
-          <span class="mp-sentiment" style="color:${sentimentColor}">${sentimentIcon} ${data.sentiment}</span>
+          <span class="mp-title">${isAI ? '🤖 AI Market Pulse' : '📰 Top Market Headlines'}</span>
+          ${headerRight}
           <span class="mp-time">${timeStr}</span>
         </div>
-        <div class="mp-reason">${escHtml(data.sentimentReason || '')}</div>
+        ${isAI && data.sentimentReason ? `<div class="mp-reason">${escHtml(data.sentimentReason)}</div>` : ''}
         <ul class="mp-bullets">
           ${(data.bullets || []).map(b => `<li>${escHtml(b)}</li>`).join('')}
         </ul>
+        ${!isAI ? `<div class="mp-setup-hint">💡 Add a <strong>Gemini API key</strong> to get AI-powered sentiment analysis</div>` : ''}
       </div>`;
   } catch(e) { if (card) card.innerHTML = ''; }
 }
