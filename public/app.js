@@ -157,14 +157,15 @@ async function _preload6MChange(coins) {
 }
 
 // Helper: compute YTD + 2Y from 730d price array and update DOM in-place
-// Format large % values: +92.5M%, +645.2K%, +456.7%
+// Format large % values for 2Y/3Y/5Y/SinceICO — no decimals, K/M above 100K
 function fmtLargePct(val) {
   if (val === null || val === undefined) return '—';
   const sign = val >= 0 ? '+' : '';
   const abs = Math.abs(val);
-  if (abs >= 1000000) return `${sign}${(val / 1000000).toFixed(1)}M%`;
-  if (abs >= 1000) return `${sign}${(val / 1000).toFixed(1)}K%`;
-  return `${sign}${val.toFixed(1)}%`;
+  if (abs >= 1e9) return `${sign}${(val / 1e9).toFixed(0)}B%`;
+  if (abs >= 1e6) return `${sign}${(val / 1e6).toFixed(0)}M%`;
+  if (abs >= 1e5) return `${sign}${(val / 1e3).toFixed(0)}K%`;
+  return `${sign}${Math.round(val)}%`;
 }
 
 function _computeAndUpdateExtPerf2Y(c, prices) {
@@ -176,13 +177,13 @@ function _computeAndUpdateExtPerf2Y(c, prices) {
   const ytdEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-ytd-col`);
   const y2El  = document.querySelector(`#lcw-crypto-${c.id} .lcw-2y-col`);
   if (ytdEl && c.changeYTD != null) { const d = c.changeYTD >= 0 ? 'up' : 'down'; ytdEl.className = `lcw-col lcw-pct ${d} lcw-ytd-col`; ytdEl.textContent = `${c.changeYTD >= 0 ? '+' : ''}${c.changeYTD.toFixed(2)}%`; }
-  if (y2El  && c.change2y  != null) { const d = c.change2y  >= 0 ? 'up' : 'down'; y2El.className  = `lcw-col lcw-pct ${d} lcw-2y-col`;  y2El.textContent  = `${c.change2y  >= 0 ? '+' : ''}${c.change2y.toFixed(2)}%`;  }
+  if (y2El  && c.change2y  != null) { const d = c.change2y  >= 0 ? 'up' : 'down'; y2El.className  = `lcw-col lcw-pct ${d} lcw-2y-col`;  y2El.textContent  = fmtLargePct(c.change2y);  }
 }
 
 function _computeAndUpdateExtPerf5Y(c, prices) {
   c.change5y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
   const y5El = document.querySelector(`#lcw-crypto-${c.id} .lcw-5y-col`);
-  if (y5El) { const d = c.change5y >= 0 ? 'up' : 'down'; y5El.className = `lcw-col lcw-pct ${d} lcw-5y-col`; y5El.textContent = `${c.change5y >= 0 ? '+' : ''}${c.change5y.toFixed(2)}%`; }
+  if (y5El) { const d = c.change5y >= 0 ? 'up' : 'down'; y5El.className = `lcw-col lcw-pct ${d} lcw-5y-col`; y5El.textContent = fmtLargePct(c.change5y); }
 }
 
 function _updateInceptionCells(c) {
@@ -227,7 +228,7 @@ async function _preloadCryptoExtPerf(coins) {
     const prices = state.cryptoCharts[c.id]['3y'];
     c.change3y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
     const y3El = document.querySelector(`#lcw-crypto-${c.id} .lcw-3y-col`);
-    if (y3El) { const d = c.change3y >= 0 ? 'up' : 'down'; y3El.className = `lcw-col lcw-pct ${d} lcw-3y-col`; y3El.textContent = `${c.change3y >= 0 ? '+' : ''}${c.change3y.toFixed(2)}%`; }
+    if (y3El) { const d = c.change3y >= 0 ? 'up' : 'down'; y3El.className = `lcw-col lcw-pct ${d} lcw-3y-col`; y3El.textContent = fmtLargePct(c.change3y); }
   });
   for (let i = 0; i < toFetch3y.length; i += 3) {
     const batch = toFetch3y.slice(i, i + 3);
@@ -239,7 +240,7 @@ async function _preloadCryptoExtPerf(coins) {
         state.cryptoCharts[c.id]['3y'] = prices;
         c.change3y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
         const y3El = document.querySelector(`#lcw-crypto-${c.id} .lcw-3y-col`);
-        if (y3El) { const d = c.change3y >= 0 ? 'up' : 'down'; y3El.className = `lcw-col lcw-pct ${d} lcw-3y-col`; y3El.textContent = `${c.change3y >= 0 ? '+' : ''}${c.change3y.toFixed(2)}%`; }
+        if (y3El) { const d = c.change3y >= 0 ? 'up' : 'down'; y3El.className = `lcw-col lcw-pct ${d} lcw-3y-col`; y3El.textContent = fmtLargePct(c.change3y); }
       } catch {}
     }));
     if (i + 3 < toFetch3y.length) await new Promise(r => setTimeout(r, 600));
@@ -3803,9 +3804,9 @@ function buildCryptoDetailedTable(coins) {
         <div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}">${(c.change6m ?? c.change200d) != null ? `${(c.change6m ?? c.change200d) >= 0 ? '+' : ''}${(c.change6m ?? c.change200d).toFixed(2)}%` : '—'}</div>
         <div class="lcw-col lcw-pct lcw-ytd-col${c.changeYTD != null ? (c.changeYTD >= 0 ? ' up' : ' down') : ''}">${c.changeYTD != null ? `${c.changeYTD >= 0 ? '+' : ''}${c.changeYTD.toFixed(2)}%` : '—'}</div>
         ${fmtPctCell(c.change1y)}
-        <div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}">${c.change2y != null ? `${c.change2y >= 0 ? '+' : ''}${c.change2y.toFixed(2)}%` : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}">${c.change3y != null ? `${c.change3y >= 0 ? '+' : ''}${c.change3y.toFixed(2)}%` : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-5y-col${c.change5y != null ? (c.change5y >= 0 ? ' up' : ' down') : ''}">${c.change5y != null ? `${c.change5y >= 0 ? '+' : ''}${c.change5y.toFixed(2)}%` : '—'}</div>
+        <div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}">${c.change2y != null ? fmtLargePct(c.change2y) : '—'}</div>
+        <div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}">${c.change3y != null ? fmtLargePct(c.change3y) : '—'}</div>
+        <div class="lcw-col lcw-pct lcw-5y-col${c.change5y != null ? (c.change5y >= 0 ? ' up' : ' down') : ''}">${c.change5y != null ? fmtLargePct(c.change5y) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-ico-col${c.sinceIco != null ? (c.sinceIco >= 0 ? ' up' : ' down') : ''}">${c.sinceIco != null ? fmtLargePct(c.sinceIco) : '—'}</div>
         <div class="lcw-col lcw-date lcw-listed-col">${c.listedDate || '—'}</div>
         <div class="lcw-col lcw-mcap">${mcap}</div>
