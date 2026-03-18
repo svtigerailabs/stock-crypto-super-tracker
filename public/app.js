@@ -48,15 +48,6 @@ async function init() {
   // Update profile badge on startup
   updateNavBadge('profiles', userProfiles.length);
 
-  // Load market index bar
-  loadMarketIndex();
-  // Smart refresh: every 30s during market hours, every 5 min off-hours
-  function _smartMarketRefresh() {
-    loadMarketIndex();
-    const interval = isMarketHours() ? 30 * 1000 : 5 * 60 * 1000;
-    setTimeout(_smartMarketRefresh, interval);
-  }
-  setTimeout(_smartMarketRefresh, 30000);
 
 
   // Refresh dashboard news every 5 minutes
@@ -1031,6 +1022,7 @@ function renderDashboard() {
     grid.className = 'stocks-grid stocks-grid-cards';
     grid.innerHTML = symbols.map(sym => buildStockCardRich(sym)).join('');
     loadProfilesBatch(symbols);
+    setTimeout(() => loadWhyMovingBadges(symbols), 1500);
   } else if (mode === 'detailed') {
     grid.className = 'stocks-list';
     grid.innerHTML = buildStockDetailedTable(symbols);
@@ -1084,6 +1076,7 @@ function buildStockCardRich(symbol) {
         <div>
           <div class="rich-card-symbol">${symbol}</div>
           <div class="rich-card-name">${s.name || symbol}</div>
+          <div class="why-moving-badge" id="why-moving-${symbol}"></div>
         </div>
         <div class="rich-card-price-block">
           <div class="rich-card-price">${price}</div>
@@ -3082,12 +3075,58 @@ async function renderLatestNews() {
       </div>
     </div>
 
+    <div id="market-pulse-card"></div>
     <div id="latest-news-list" class="latest-news-list">
       <div class="news-loading">Loading news…</div>
     </div>`;
 
   renderNewsCustSymbols();
   await refreshLatestNews();
+  loadMarketPulse();
+}
+
+async function loadMarketPulse() {
+  const card = document.getElementById('market-pulse-card');
+  if (!card) return;
+  try {
+    const data = await api('GET', '/news-summary');
+    if (!data?.available) { card.innerHTML = ''; return; }
+    const sentimentColor = data.sentiment === 'Bullish' ? 'var(--green)' : data.sentiment === 'Bearish' ? 'var(--red)' : 'var(--orange)';
+    const sentimentIcon = data.sentiment === 'Bullish' ? '▲' : data.sentiment === 'Bearish' ? '▼' : '◆';
+    const timeStr = data.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+    card.innerHTML = `
+      <div class="market-pulse-card">
+        <div class="mp-header">
+          <span class="mp-title">🤖 AI Market Pulse</span>
+          <span class="mp-sentiment" style="color:${sentimentColor}">${sentimentIcon} ${data.sentiment}</span>
+          <span class="mp-time">${timeStr}</span>
+        </div>
+        <div class="mp-reason">${escHtml(data.sentimentReason || '')}</div>
+        <ul class="mp-bullets">
+          ${(data.bullets || []).map(b => `<li>${escHtml(b)}</li>`).join('')}
+        </ul>
+      </div>`;
+  } catch(e) { if (card) card.innerHTML = ''; }
+}
+
+const _whyMovingFetched = new Set();
+async function loadWhyMovingBadges(symbols) {
+  for (const symbol of symbols) {
+    if (_whyMovingFetched.has(symbol)) continue;
+    const s = state.stocks[symbol] || {};
+    const chg = s.changePercent;
+    if (typeof chg !== 'number' || Math.abs(chg) < 1.5) continue;
+    _whyMovingFetched.add(symbol);
+    try {
+      const data = await api('GET', `/stock/${symbol}/why-moving?change=${chg.toFixed(2)}`);
+      if (!data?.reason) continue;
+      const el = document.getElementById(`why-moving-${symbol}`);
+      if (!el) continue;
+      const dir = chg >= 0 ? 'up' : 'down';
+      el.innerHTML = `<span class="why-moving-tag ${dir}" title="AI-generated explanation">✦ ${escHtml(data.reason)}</span>`;
+    } catch(e) { /* silent */ }
+    await new Promise(r => setTimeout(r, 500)); // rate-limit Gemini calls
+  }
 }
 
 /* ─── CRYPTO NEWS VIEW ─────────────────────────────────────────── */

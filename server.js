@@ -1364,6 +1364,90 @@ app.get('/api/earnings-calendar', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Gemini AI features ──────────────────────────────────────────────────────
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_URL = GEMINI_API_KEY
+  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_API_KEY}`
+  : null;
+
+async function callGemini(prompt, maxTokens = 400) {
+  if (!GEMINI_URL) return null;
+  const res = await fetch(GEMINI_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini ${res.status}`);
+  const json = await res.json();
+  return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+}
+
+// ── News Summary (Market Pulse) — 6h cache ──
+const newsSummaryCache = { data: null, fetchedAt: 0 };
+const NEWS_SUMMARY_TTL = 6 * 60 * 60 * 1000;
+
+app.get('/api/news-summary', async (req, res) => {
+  if (!GEMINI_URL) return res.json({ available: false });
+  if (newsSummaryCache.data && (Date.now() - newsSummaryCache.fetchedAt) < NEWS_SUMMARY_TTL) {
+    return res.json(newsSummaryCache.data);
+  }
+  try {
+    const articles = (latestNewsCache.data || []).slice(0, 20);
+    if (!articles.length) return res.json({ available: false });
+    const headlines = articles.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
+    const prompt = `You are a senior financial analyst. Summarize these market headlines into a concise briefing.\n\nHeadlines:\n${headlines}\n\nRespond ONLY with this exact JSON (no markdown):\n{"bullets":["theme 1 as one sentence","theme 2 as one sentence","theme 3 as one sentence"],"sentiment":"Bullish","sentimentReason":"one short sentence"}`;
+    const text = await callGemini(prompt, 350);
+    const match = text?.match(/\{[\s\S]*\}/);
+    if (!match) return res.json({ available: false });
+    const summary = { ...JSON.parse(match[0]), available: true, generatedAt: new Date().toISOString() };
+    newsSummaryCache.data = summary;
+    newsSummaryCache.fetchedAt = Date.now();
+    res.json(summary);
+  } catch (e) {
+    console.warn('News summary error:', e.message);
+    res.json({ available: false });
+  }
+});
+
+// ── Why Moving badge — 4h cache per symbol ──
+const whyMovingCache = {};
+const WHY_MOVING_TTL = 4 * 60 * 60 * 1000;
+
+app.get('/api/stock/:symbol/why-moving', async (req, res) => {
+  if (!GEMINI_URL) return res.json({ reason: null });
+  const symbol = req.params.symbol.toUpperCase();
+  const change = parseFloat(req.query.change) || 0;
+  if (Math.abs(change) < 1.5) return res.json({ reason: null });
+
+  const cached = whyMovingCache[symbol];
+  if (cached && (Date.now() - cached.fetchedAt) < WHY_MOVING_TTL) {
+    return res.json({ reason: cached.reason });
+  }
+  try {
+    const all = latestNewsCache.data || [];
+    const relevant = all
+      .filter(a => (a.title || '').toUpperCase().includes(symbol))
+      .slice(0, 6)
+      .map(a => `- ${a.title}`)
+      .join('\n');
+    if (!relevant) {
+      whyMovingCache[symbol] = { reason: null, fetchedAt: Date.now() };
+      return res.json({ reason: null });
+    }
+    const dir = change >= 0 ? `up ${change.toFixed(1)}%` : `down ${Math.abs(change).toFixed(1)}%`;
+    const prompt = `Stock ${symbol} is ${dir} today. Give a VERY SHORT reason (3-5 words max) based on these headlines. Only output the short phrase, nothing else.\n\nHeadlines:\n${relevant}`;
+    const text = await callGemini(prompt, 25);
+    const reason = text?.replace(/["""*]/g, '').trim() || null;
+    whyMovingCache[symbol] = { reason, fetchedAt: Date.now() };
+    res.json({ reason });
+  } catch (e) {
+    res.json({ reason: null });
+  }
+});
+
 app.get('/api/crypto', async (req, res) => {
   try { res.json(await fetchCryptoData()); }
   catch (e) { res.status(400).json({ error: e.message }); }

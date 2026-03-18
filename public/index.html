@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock & Crypto Super Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=23" />
+  <link rel="stylesheet" href="styles.css?v=24" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
 </head>
 <body>
@@ -111,11 +111,6 @@
         <button class="btn-sm-edit" onclick="showSaveProfileModal()" title="Save current watchlist as a profile">💾 Save Profile</button>
         <button class="btn-sm-add" onclick="showAddAlertModal()">＋ Alert</button>
       </div>
-    </div>
-
-    <!-- Market Index Bar (Yahoo Finance style) -->
-    <div id="market-index-bar" class="market-index-bar">
-      <div class="mkt-idx-loading">Loading market data…</div>
     </div>
 
     <div id="stocks-grid" class="stocks-grid">
@@ -681,6 +676,6 @@
 <div id="toast-container" class="toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js?v=23"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>
