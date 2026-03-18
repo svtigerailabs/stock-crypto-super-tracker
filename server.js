@@ -1309,7 +1309,7 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
       const json = await r.json();
       prices = (json.Data?.Data || []).map(d => d.close).filter(v => v > 0);
     } else {
-      const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '3y': 1095 };
+      const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '3y': 1095, '5y': 1825 };
       const limit = LIMIT_MAP[range];
       if (!limit) return res.status(400).json({ error: 'Invalid range' });
       const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&limit=${limit}`;
@@ -1321,6 +1321,31 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
     if (!prices.length) throw new Error('No chart data');
     cryptoChartCache[cacheKey] = { data: prices, at: Date.now() };
     res.json(prices);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── CRYPTO INCEPTION (Since ICO) ────────────────────────────────────────────
+const cryptoInceptionCache = {};
+app.get('/api/crypto/:id/inception', async (req, res) => {
+  const { id } = req.params;
+  const cached = cryptoInceptionCache[id];
+  if (cached && (Date.now() - cached.at) < 24 * 60 * 60 * 1000) return res.json(cached.data);
+  const symbol = id.split('-')[0].toUpperCase();
+  try {
+    const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&allData=true`;
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`CryptoCompare ${r.status}`);
+    const json = await r.json();
+    const data = (json.Data?.Data || []).filter(d => d.close > 0 && d.time > 0);
+    if (data.length < 2) throw new Error('Not enough data');
+    const firstClose = data[0].close;
+    const lastClose = data[data.length - 1].close;
+    const change = ((lastClose - firstClose) / firstClose) * 100;
+    const d = new Date(data[0].time * 1000);
+    const listedDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const result = { change, listedDate };
+    cryptoInceptionCache[id] = { data: result, at: Date.now() };
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

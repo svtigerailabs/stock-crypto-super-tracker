@@ -1074,14 +1074,14 @@ html, body {
 .lcw-table-scroll-wrap::-webkit-scrollbar-thumb { background: #3d444d; border-radius: 4px; }
 .lcw-table-scroll-wrap::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 .lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 800px; }
-.lcw-crypto-table { min-width: 1160px; }
+.lcw-crypto-table { min-width: 1310px; }
 /* Stock table: #, stock, price, 1D-3Y (9cols), 5Y, SinceIPO, Listed, cap, vol, chart */
 .lcw-stock { min-width: 1200px; }
 
-/* Crypto table: #, ★icon, coin, price, ATH, ToATH, 1H, 24H, 7D, 30D, 6M, YTD, 1Y, 2Y, 3Y, mcap, vol, chart */
+/* Crypto table: #, ★icon, coin, price, ATH, ↑ATH, 1H-3Y(9), 5Y, SinceICO, Listed, cap, vol, chart */
 .lcw-header {
   display: grid;
-  grid-template-columns: 28px 32px 90px 80px 90px 50px repeat(9, 56px) 80px 68px 130px;
+  grid-template-columns: 28px 32px 80px 76px 84px 50px repeat(9, 56px) 56px 74px 48px 80px 68px 130px;
   gap: 0; padding: 8px 10px; font-size: 10px; font-weight: 800;
   color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px;
   background: var(--card); border-bottom: 2px solid var(--border);
@@ -1093,7 +1093,7 @@ html, body {
 
 .lcw-row {
   display: grid;
-  grid-template-columns: 28px 32px 90px 80px 90px 50px repeat(9, 56px) 80px 68px 130px;
+  grid-template-columns: 28px 32px 80px 76px 84px 50px repeat(9, 56px) 56px 74px 48px 80px 68px 130px;
   gap: 0; padding: 6px 10px; align-items: center;
   border-bottom: 1px solid #1c2128; background: var(--surface);
   font-size: 12px; transition: background .1s; cursor: pointer;
