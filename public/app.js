@@ -79,6 +79,17 @@ async function init() {
     }
   }, 12000);
 
+  // Eagerly preload crypto extended perf data (90D, 6M, YTD, 2Y, 3Y, 5Y, SinceICO)
+  // so it's ready when user navigates to Crypto detailed view
+  setTimeout(async () => {
+    if (!state.cryptoData?.length) {
+      try { state.cryptoData = await api('GET', '/crypto'); } catch { return; }
+    }
+    const coins = [...state.cryptoData].sort((a,b)=>(a.rank||999)-(b.rank||999)).slice(0, state.cryptoRankLimit || 50);
+    _preload6MChange(coins);
+    _preloadCryptoExtPerf(coins);
+  }, 15000);
+
   // Eagerly load all stock profiles so data columns populate on first view
   setTimeout(() => loadProfilesBatch(getDashSymbols()), 3000);
   // Refresh profiles every 15 min to keep data current
@@ -125,7 +136,7 @@ async function _preload6MChange(coins) {
             if (el) { const d = c.change90d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-90d-col`; el.textContent = `${c.change90d >= 0 ? '+' : ''}${c.change90d.toFixed(2)}%`; }
           }
         } catch {}
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 300));
       }
     }
     if (c.change6m != null) continue; // 6M already computed
@@ -153,7 +164,7 @@ async function _preload6MChange(coins) {
         pctEl.textContent = `${c.change6m >= 0 ? '+' : ''}${c.change6m.toFixed(2)}%`;
       }
     } catch {}
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 400));
   }
 }
 
@@ -3542,8 +3553,8 @@ async function renderCryptoDashboard() {
   // Show/hide zoom controls based on mode
   const zoomCtrl = document.getElementById('crypto-zoom-controls');
   if (zoomCtrl) zoomCtrl.style.display = mode === 'detailed' ? 'flex' : 'none';
-  // Lazy-load 6M change data in background for visible coins (first 16)
-  setTimeout(() => _preload6MChange(visibleCoins.slice(0, 16)), 1500);
+  // Lazy-load 6M change data in background for all visible coins
+  setTimeout(() => _preload6MChange(visibleCoins), 1500);
   const newsSection = document.getElementById('crypto-news-section');
 
   if (mode === 'detailed') {
@@ -3552,8 +3563,8 @@ async function renderCryptoDashboard() {
     if (newsSection) newsSection.style.display = 'none';
     // Load charts immediately for visible period (shows cached, fetches missing)
     setTimeout(() => setCryptoChartPeriod(state.cryptoChartPeriod), 50);
-    // Preload extended perf data (YTD, 2Y, 3Y) in background
-    setTimeout(() => _preloadCryptoExtPerf(visibleCoins.slice(0, 20)), 500);
+    // Preload extended perf data (YTD, 2Y, 3Y) in background for all visible coins
+    setTimeout(() => _preloadCryptoExtPerf(visibleCoins), 500);
     // Apply zoom if previously set
     setTimeout(() => adjustCryptoZoom(0), 80);
   } else if (mode === 'heatmap') {
