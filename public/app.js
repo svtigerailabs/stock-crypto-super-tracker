@@ -2889,7 +2889,6 @@ function showOverwriteProfile(id) {
 // All known sources (update tabs dynamically)
 const NEWS_SOURCES = ['Yahoo Finance', 'CNBC', 'Bloomberg', 'Reuters', 'MarketWatch'];
 const NEWS_CATEGORIES = [
-  { key: 'all', label: 'All News' },
   { key: 'breaking', label: '🔴 Breaking' },
   { key: 'portfolio', label: '💼 My Stocks' },
   { key: 'geo', label: '🌍 Geopolitical' },
@@ -2978,7 +2977,7 @@ async function renderLatestNews() {
 }
 
 /* ─── CRYPTO NEWS VIEW ─────────────────────────────────────────── */
-let _cryptoNewsViewFilter = 'all';
+let _cryptoNewsViewFilter = 'CoinTelegraph';
 let _cryptoNewsViewRefreshTimer = null;
 
 async function renderCryptoNewsView() {
@@ -2997,9 +2996,7 @@ async function renderCryptoNewsView() {
     </div>
     <!-- source filter tabs -->
     <div class="news-source-tabs" id="crypto-news-tabs">
-      <button class="news-tab active" data-src="all" onclick="setCryptoNewsFilter('all')">All Sources</button>
-      <button class="news-tab" data-src="CryptoCompare" onclick="setCryptoNewsFilter('CryptoCompare')">CryptoCompare</button>
-      <button class="news-tab" data-src="CoinTelegraph" onclick="setCryptoNewsFilter('CoinTelegraph')">CoinTelegraph</button>
+      <button class="news-tab active" data-src="CoinTelegraph" onclick="setCryptoNewsFilter('CoinTelegraph')">CoinTelegraph</button>
       <button class="news-tab" data-src="CoinDesk" onclick="setCryptoNewsFilter('CoinDesk')">CoinDesk</button>
       <button class="news-tab" data-src="Decrypt" onclick="setCryptoNewsFilter('Decrypt')">Decrypt</button>
       <button class="news-tab" data-src="Bitcoin Magazine" onclick="setCryptoNewsFilter('Bitcoin Magazine')">Bitcoin Mag</button>
