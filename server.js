@@ -1385,71 +1385,108 @@ async function callGemini(prompt, maxTokens = 400) {
   return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
 }
 
-// ── News Summary (Market Pulse) — 2h cache ──
+// ── News Summary (Market Pulse) — 1h cache ──
 const newsSummaryCache = { data: null, fetchedAt: 0 };
-const NEWS_SUMMARY_TTL = 2 * 60 * 60 * 1000;
+const NEWS_SUMMARY_TTL = 1 * 60 * 60 * 1000; // 1 hour
+
+function _pickArticles(pool, count) {
+  return pool.slice(0, count).map(a => ({
+    title: a.title || '',
+    link: a.link || a.url || '',
+    source: a.source || a.publisher || '',
+    publishedAt: a.publishedAt || a.pubDate || null,
+  }));
+}
 
 app.get('/api/news-summary', async (req, res) => {
   if (newsSummaryCache.data && (Date.now() - newsSummaryCache.fetchedAt) < NEWS_SUMMARY_TTL) {
     return res.json(newsSummaryCache.data);
   }
-  const articles = (latestNewsCache.data || []).slice(0, 30);
-  if (!articles.length) return res.json({ available: false });
+  const pool = (latestNewsCache.data || []).slice(0, 50);
+  if (!pool.length) return res.json({ available: false });
 
-  // Without Gemini: return top 5 headlines as a simple "pulse"
+  // Without Gemini: return top 25 articles directly
   if (!GEMINI_URL) {
-    const top5 = articles.slice(0, 5).map(a => a.title);
-    const summary = { available: true, aiPowered: false, bullets: top5, sentiment: null, generatedAt: new Date().toISOString() };
+    const summary = { available: true, aiPowered: false, articles: _pickArticles(pool, 25), sentiment: null, sentimentReason: null, generatedAt: new Date().toISOString() };
     newsSummaryCache.data = summary; newsSummaryCache.fetchedAt = Date.now();
     return res.json(summary);
   }
 
   try {
-    const headlines = articles.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
-    const prompt = `You are a senior financial analyst. From these market headlines, identify the TOP 5 most important and market-impactful stories. For each, write ONE concise sentence explaining the story and its market impact.\n\nHeadlines:\n${headlines}\n\nRespond ONLY with this exact JSON (no markdown, no extra text):\n{"bullets":["story 1 + why it matters","story 2 + why it matters","story 3 + why it matters","story 4 + why it matters","story 5 + why it matters"],"sentiment":"Bullish","sentimentReason":"one short sentence explaining overall market tone"}`;
-    const text = await callGemini(prompt, 500);
+    const headlineList = pool.map((a, i) => `${i + 1}. ${a.title} [${a.source || a.publisher || ''}]`).join('\n');
+    const prompt = `You are a senior financial analyst. From these ${pool.length} market news articles, select the TOP 25 most important and market-impactful stories. Rank them from most to least important.\n\nArticles:\n${headlineList}\n\nRespond ONLY with this exact JSON (no markdown, no extra text):\n{"top":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],"sentiment":"Bullish","sentimentReason":"one short sentence explaining overall market tone"}`;
+    const text = await callGemini(prompt, 600);
     const match = text?.match(/\{[\s\S]*\}/);
-    if (!match) return res.json({ available: false });
-    const summary = { ...JSON.parse(match[0]), available: true, aiPowered: true, generatedAt: new Date().toISOString() };
+    if (!match) throw new Error('No JSON in response');
+    const parsed = JSON.parse(match[0]);
+
+    // Build ranked articles from Gemini's 1-based index list
+    const indices = (parsed.top || []).map(n => parseInt(n) - 1).filter(i => i >= 0 && i < pool.length);
+    const used = new Set(indices);
+    for (let i = 0; i < pool.length && indices.length < 25; i++) {
+      if (!used.has(i)) { indices.push(i); used.add(i); }
+    }
+    const articles = indices.slice(0, 25).map(i => ({
+      title: pool[i].title || '', link: pool[i].link || pool[i].url || '',
+      source: pool[i].source || pool[i].publisher || '', publishedAt: pool[i].publishedAt || pool[i].pubDate || null,
+    }));
+
+    const summary = { available: true, aiPowered: true, articles, sentiment: parsed.sentiment || null, sentimentReason: parsed.sentimentReason || null, generatedAt: new Date().toISOString() };
     newsSummaryCache.data = summary; newsSummaryCache.fetchedAt = Date.now();
     res.json(summary);
   } catch (e) {
     console.warn('News summary error:', e.message);
-    res.json({ available: false });
+    // Fallback: return top 25 without AI ranking
+    const summary = { available: true, aiPowered: false, articles: _pickArticles(pool, 25), sentiment: null, sentimentReason: null, generatedAt: new Date().toISOString() };
+    newsSummaryCache.data = summary; newsSummaryCache.fetchedAt = Date.now();
+    res.json(summary);
   }
 });
 
-// ── Crypto News Summary (Crypto Pulse) — 2h cache ──
+// ── Crypto News Summary (Crypto Pulse) — 1h cache ──
 const cryptoSummaryCache = { data: null, fetchedAt: 0 };
-const CRYPTO_SUMMARY_TTL = 2 * 60 * 60 * 1000;
+const CRYPTO_SUMMARY_TTL = 1 * 60 * 60 * 1000; // 1 hour
 
 app.get('/api/crypto-news-summary', async (req, res) => {
   if (cryptoSummaryCache.data && (Date.now() - cryptoSummaryCache.fetchedAt) < CRYPTO_SUMMARY_TTL) {
     return res.json(cryptoSummaryCache.data);
   }
-  const articles = (cryptoNewsCache.data || []).slice(0, 30);
-  if (!articles.length) return res.json({ available: false });
+  const pool = (cryptoNewsCache.data || []).slice(0, 50);
+  if (!pool.length) return res.json({ available: false });
 
-  // Without Gemini: return top 5 headlines
+  // Without Gemini: return top 25 articles directly
   if (!GEMINI_URL) {
-    const top5 = articles.slice(0, 5).map(a => a.title);
-    const summary = { available: true, aiPowered: false, bullets: top5, sentiment: null, generatedAt: new Date().toISOString() };
+    const summary = { available: true, aiPowered: false, articles: _pickArticles(pool, 25), sentiment: null, sentimentReason: null, generatedAt: new Date().toISOString() };
     cryptoSummaryCache.data = summary; cryptoSummaryCache.fetchedAt = Date.now();
     return res.json(summary);
   }
 
   try {
-    const headlines = articles.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
-    const prompt = `You are a senior crypto market analyst. From these crypto headlines, identify the TOP 5 most important stories that could impact Bitcoin, Ethereum, and the broader crypto market. For each, write ONE concise sentence explaining the story and its crypto market impact.\n\nHeadlines:\n${headlines}\n\nRespond ONLY with this exact JSON (no markdown, no extra text):\n{"bullets":["story 1 + why it matters","story 2 + why it matters","story 3 + why it matters","story 4 + why it matters","story 5 + why it matters"],"sentiment":"Bullish","sentimentReason":"one short sentence explaining overall crypto market tone"}`;
-    const text = await callGemini(prompt, 500);
+    const headlineList = pool.map((a, i) => `${i + 1}. ${a.title} [${a.source || a.publisher || ''}]`).join('\n');
+    const prompt = `You are a senior crypto market analyst. From these ${pool.length} crypto news articles, select the TOP 25 most important stories that could impact Bitcoin, Ethereum, and the broader crypto market. Rank them from most to least important.\n\nArticles:\n${headlineList}\n\nRespond ONLY with this exact JSON (no markdown, no extra text):\n{"top":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],"sentiment":"Bullish","sentimentReason":"one short sentence explaining overall crypto market tone"}`;
+    const text = await callGemini(prompt, 600);
     const match = text?.match(/\{[\s\S]*\}/);
-    if (!match) return res.json({ available: false });
-    const summary = { ...JSON.parse(match[0]), available: true, aiPowered: true, generatedAt: new Date().toISOString() };
+    if (!match) throw new Error('No JSON in response');
+    const parsed = JSON.parse(match[0]);
+
+    const indices = (parsed.top || []).map(n => parseInt(n) - 1).filter(i => i >= 0 && i < pool.length);
+    const used = new Set(indices);
+    for (let i = 0; i < pool.length && indices.length < 25; i++) {
+      if (!used.has(i)) { indices.push(i); used.add(i); }
+    }
+    const articles = indices.slice(0, 25).map(i => ({
+      title: pool[i].title || '', link: pool[i].link || pool[i].url || '',
+      source: pool[i].source || pool[i].publisher || '', publishedAt: pool[i].publishedAt || pool[i].pubDate || null,
+    }));
+
+    const summary = { available: true, aiPowered: true, articles, sentiment: parsed.sentiment || null, sentimentReason: parsed.sentimentReason || null, generatedAt: new Date().toISOString() };
     cryptoSummaryCache.data = summary; cryptoSummaryCache.fetchedAt = Date.now();
     res.json(summary);
   } catch (e) {
     console.warn('Crypto summary error:', e.message);
-    res.json({ available: false });
+    const summary = { available: true, aiPowered: false, articles: _pickArticles(pool, 25), sentiment: null, sentimentReason: null, generatedAt: new Date().toISOString() };
+    cryptoSummaryCache.data = summary; cryptoSummaryCache.fetchedAt = Date.now();
+    res.json(summary);
   }
 });
 

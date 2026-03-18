@@ -383,6 +383,8 @@ function initSocket() {
     if (data.alerts?.length) state.alerts = data.alerts;
     if (data.stockCache) Object.assign(state.stocks, data.stockCache);
     if (data.notificationHistory?.length && !state.history.length) state.history = data.notificationHistory;
+    // Server is confirmed up — force news refresh so it always loads after connection
+    dashNewsLoaded = false;
     renderAll();
   });
 
@@ -3107,6 +3109,52 @@ async function renderLatestNews() {
   loadMarketPulse();
 }
 
+function _mpTimeAgo(ts) {
+  if (!ts) return '';
+  const diffMs = Date.now() - new Date(ts).getTime();
+  const h = Math.floor(diffMs / 3600000), m = Math.floor(diffMs / 60000);
+  return h > 0 ? `${h}h ago` : m > 0 ? `${m}m ago` : 'just now';
+}
+
+function _mpBuildArticleHtml(articles) {
+  return articles.map((a, i) => {
+    const src = escHtml(a.source || '');
+    const title = escHtml(a.title || '');
+    const link = escHtml(a.link || '#');
+    const timeAgo = _mpTimeAgo(a.publishedAt);
+    const fullDate = a.publishedAt ? new Date(a.publishedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const tooltipContent = escHtml(`${a.source ? a.source + ' · ' : ''}${fullDate}`);
+    return `<li class="mp-article-item">
+      <span class="mp-article-num">${i + 1}</span>
+      ${src ? `<span class="mp-article-src">${src}</span>` : ''}
+      <a class="mp-article-link" href="${link}" target="_blank" rel="noopener"
+         onmouseenter="showMpTooltip(event,'${tooltipContent.replace(/'/g, '&#39;')}')"
+         onmouseleave="hideMpTooltip()">${title}</a>
+      ${timeAgo ? `<span class="mp-article-time">${escHtml(timeAgo)}</span>` : ''}
+    </li>`;
+  }).join('');
+}
+
+function showMpTooltip(event, text) {
+  let tip = document.getElementById('mp-tooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'mp-tooltip';
+    tip.className = 'mp-tooltip';
+    document.body.appendChild(tip);
+  }
+  tip.textContent = text;
+  tip.style.display = 'block';
+  const rect = event.target.getBoundingClientRect();
+  tip.style.left = Math.min(rect.left, window.innerWidth - 320) + 'px';
+  tip.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+}
+
+function hideMpTooltip() {
+  const tip = document.getElementById('mp-tooltip');
+  if (tip) tip.style.display = 'none';
+}
+
 async function loadMarketPulse() {
   const card = document.getElementById('market-pulse-card');
   if (!card) return;
@@ -3114,28 +3162,29 @@ async function loadMarketPulse() {
     const data = await api('GET', '/news-summary');
     if (!data?.available) { card.innerHTML = ''; return; }
 
-    const isAI = data.aiPowered !== false; // true when Gemini key set
+    const isAI = data.aiPowered !== false;
     const timeStr = data.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
 
-    let headerRight = '';
+    let sentimentHtml = '';
     if (isAI && data.sentiment) {
       const sentimentColor = data.sentiment === 'Bullish' ? 'var(--green)' : data.sentiment === 'Bearish' ? 'var(--red)' : 'var(--orange)';
       const sentimentIcon = data.sentiment === 'Bullish' ? '▲' : data.sentiment === 'Bearish' ? '▼' : '◆';
-      headerRight = `<span class="mp-sentiment" style="color:${sentimentColor}">${sentimentIcon} ${data.sentiment}</span>`;
+      sentimentHtml = `<span class="mp-sentiment" style="color:${sentimentColor}">${sentimentIcon} ${data.sentiment}</span>`;
     }
 
+    const articles = data.articles || [];
     card.innerHTML = `
       <div class="market-pulse-card">
         <div class="mp-header">
-          <span class="mp-title">${isAI ? '🤖 AI Market Pulse' : '📰 Top Market Headlines'}</span>
-          ${headerRight}
+          <span class="mp-title">${isAI ? '🤖 AI Market Pulse · Top 25' : '📰 Top Market Headlines'}</span>
+          ${sentimentHtml}
           <span class="mp-time">${timeStr}</span>
         </div>
         ${isAI && data.sentimentReason ? `<div class="mp-reason">${escHtml(data.sentimentReason)}</div>` : ''}
-        <ul class="mp-bullets">
-          ${(data.bullets || []).map(b => `<li>${escHtml(b)}</li>`).join('')}
-        </ul>
-        ${!isAI ? `<div class="mp-setup-hint">💡 Add a <strong>Gemini API key</strong> to get AI-powered sentiment analysis</div>` : ''}
+        <ol class="mp-articles-list">
+          ${_mpBuildArticleHtml(articles)}
+        </ol>
+        ${!isAI ? `<div class="mp-setup-hint">💡 Add a <strong>Gemini API key</strong> to get AI-ranked top 25 stories with sentiment analysis</div>` : ''}
       </div>`;
   } catch(e) { if (card) card.innerHTML = ''; }
 }
@@ -3150,25 +3199,26 @@ async function loadCryptoPulse(targetId = 'crypto-news-pulse-card') {
     const isAI = data.aiPowered !== false;
     const timeStr = data.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
 
-    let headerRight = '';
+    let sentimentHtml = '';
     if (isAI && data.sentiment) {
       const sentimentColor = data.sentiment === 'Bullish' ? 'var(--green)' : data.sentiment === 'Bearish' ? 'var(--red)' : 'var(--orange)';
       const sentimentIcon = data.sentiment === 'Bullish' ? '▲' : data.sentiment === 'Bearish' ? '▼' : '◆';
-      headerRight = `<span class="mp-sentiment" style="color:${sentimentColor}">${sentimentIcon} ${data.sentiment}</span>`;
+      sentimentHtml = `<span class="mp-sentiment" style="color:${sentimentColor}">${sentimentIcon} ${data.sentiment}</span>`;
     }
 
+    const articles = data.articles || [];
     card.innerHTML = `
       <div class="market-pulse-card">
         <div class="mp-header">
-          <span class="mp-title">${isAI ? '🤖 AI Crypto Pulse' : '📰 Top Crypto Headlines'}</span>
-          ${headerRight}
+          <span class="mp-title">${isAI ? '🤖 AI Crypto Pulse · Top 25' : '📰 Top Crypto Headlines'}</span>
+          ${sentimentHtml}
           <span class="mp-time">${timeStr}</span>
         </div>
         ${isAI && data.sentimentReason ? `<div class="mp-reason">${escHtml(data.sentimentReason)}</div>` : ''}
-        <ul class="mp-bullets">
-          ${(data.bullets || []).map(b => `<li>${escHtml(b)}</li>`).join('')}
-        </ul>
-        ${!isAI ? `<div class="mp-setup-hint">💡 Add a <strong>Gemini API key</strong> to get AI-powered crypto sentiment</div>` : ''}
+        <ol class="mp-articles-list">
+          ${_mpBuildArticleHtml(articles)}
+        </ol>
+        ${!isAI ? `<div class="mp-setup-hint">💡 Add a <strong>Gemini API key</strong> to get AI-ranked top 25 stories with sentiment analysis</div>` : ''}
       </div>`;
   } catch(e) { if (card) card.innerHTML = ''; }
 }
