@@ -1031,7 +1031,6 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-pct">YTD</div>
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
-        <div class="lcw-col lcw-pct">3Y</div>
         <div class="lcw-col lcw-mcap">Cap</div>
         <div class="lcw-col lcw-vol">Vol</div>
         <div class="lcw-col lcw-chart"><span class="chart-period-toggle">${periodBtns}</span></div>
@@ -1077,7 +1076,6 @@ function buildStockDetailedRow(symbol, rank) {
       ${pctCell(perf['YTD'])}
       ${pctCell(perf['1Y'])}
       ${pctCell(perf['2Y'])}
-      ${pctCell(perf['3Y'])}
       <div class="lcw-col lcw-mcap">${mcap}</div>
       <div class="lcw-col lcw-vol">${vol}</div>
       <div class="lcw-col lcw-chart" id="stock-chart-${symbol}">${spark}</div>
@@ -1132,7 +1130,6 @@ function updateStockDetailedRow(symbol) {
     ${pctCell(perf['YTD'])}
     ${pctCell(perf['1Y'])}
     ${pctCell(perf['2Y'])}
-    ${pctCell(perf['3Y'])}
     <div class="lcw-col lcw-mcap">${mcap}</div>
     <div class="lcw-col lcw-vol">${vol}</div>
     <div class="lcw-col lcw-chart" id="stock-chart-${symbol}">${spark}</div>
@@ -2940,7 +2937,6 @@ async function renderLatestNews() {
     <!-- Compact combined filter row: category + source on one line -->
     <div class="news-controls-compact" id="news-controls-compact">
       <div class="news-ctrl-group">
-        <span class="news-ctrl-label">Type</span>
         ${NEWS_CATEGORIES.map(c => `<button class="news-chip ${c.key===newsCategoryFilter?'active':''}" data-cat="${c.key}" onclick="filterNewsCategory('${c.key}')">${c.label}</button>`).join('')}
       </div>
       <div class="news-ctrl-divider"></div>
@@ -2978,7 +2974,9 @@ async function renderLatestNews() {
 
 /* ─── CRYPTO NEWS VIEW ─────────────────────────────────────────── */
 let _cryptoNewsViewFilter = 'CoinTelegraph';
+let _cryptoNewsViewCatFilter = 'all'; // 'all' | 'breaking'
 let _cryptoNewsViewRefreshTimer = null;
+const CRYPTO_URGENCY = ['breaking','alert','urgent','crash','surge','soars','plunges','collapses','halted','suspended','fraud','crisis','record high','record low','liquidat','hack','exploit','ban','sec','lawsuit'];
 
 async function renderCryptoNewsView() {
   const view = document.getElementById('crypto-news-view');
@@ -2992,6 +2990,13 @@ async function renderCryptoNewsView() {
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn-secondary" onclick="loadCryptoNews(true).then(renderCryptoNewsView)">🔄 Refresh</button>
+      </div>
+    </div>
+    <!-- category filter (Breaking) -->
+    <div class="news-controls-compact" id="crypto-news-cat-bar" style="margin-bottom:8px">
+      <div class="news-ctrl-group">
+        <button class="news-chip ${_cryptoNewsViewCatFilter==='all'?'active':''}" data-cat="all" onclick="setCryptoNewsCatFilter('all')">All</button>
+        <button class="news-chip ${_cryptoNewsViewCatFilter==='breaking'?'active':''}" data-cat="breaking" onclick="setCryptoNewsCatFilter('breaking')">🔴 Breaking</button>
       </div>
     </div>
     <!-- source filter tabs -->
@@ -3038,6 +3043,14 @@ function setCryptoNewsFilter(src) {
   renderCryptoNewsViewList();
 }
 
+function setCryptoNewsCatFilter(cat) {
+  _cryptoNewsViewCatFilter = cat;
+  document.querySelectorAll('#crypto-news-cat-bar .news-chip').forEach(b => {
+    b.classList.toggle('active', b.dataset.cat === cat);
+  });
+  renderCryptoNewsViewList();
+}
+
 function renderCryptoNewsViewList() {
   const list = document.getElementById('crypto-news-view-list');
   if (!list) return;
@@ -3054,6 +3067,12 @@ function renderCryptoNewsViewList() {
     } else {
       articles = articles.filter(a => (a.source || '').toLowerCase().includes(_cryptoNewsViewFilter.toLowerCase()));
     }
+  }
+  if (_cryptoNewsViewCatFilter === 'breaking') {
+    articles = articles.filter(a => {
+      const t = (a.title || '').toLowerCase();
+      return CRYPTO_URGENCY.some(kw => t.includes(kw));
+    });
   }
 
   if (!articles.length) {
@@ -3179,7 +3198,7 @@ function renderNewsItems() {
     items = items.filter(n => (n.categories || []).includes(newsCategoryFilter));
   }
 
-  if (!items.length) { list.innerHTML = '<div class="news-empty">No news found for current filter. Try "All News".</div>'; return; }
+  if (!items.length) { list.innerHTML = '<div class="news-empty">No news found for this filter.</div>'; return; }
 
   list.innerHTML = items.map((n, idx) => {
     const ts = n.publishedAt;
