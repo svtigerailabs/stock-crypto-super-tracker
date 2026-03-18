@@ -62,6 +62,13 @@ async function init() {
     startTickerRotation('stock', 12);
     startTickerRotation('crypto', 12);
   });
+  // Safety net: if ticker is still showing "Loading" after 18s, force-render with whatever data is available
+  setTimeout(() => {
+    ['stock', 'crypto'].forEach(type => {
+      const track = document.getElementById(`${type}-ticker-track`);
+      if (track && track.querySelector('.ticker-loading')) renderTickerMarquee(type);
+    });
+  }, 18000);
 
   // Refresh dashboard news every 5 minutes
   setTimeout(loadDashboardNews, 4000);
@@ -691,7 +698,7 @@ function renderTickerMarquee(type) {
 function _restartTickerAnim(el) {
   el.style.animation = 'none';
   void el.offsetWidth; // force reflow
-  el.style.animation = '';
+  el.style.animation = 'ticker-scroll 80s linear infinite';
 }
 
 function startTickerRotation(type) {
@@ -1040,6 +1047,7 @@ function buildStockDetailedTable(symbols) {
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
+        <div class="lcw-col lcw-pct">5Y</div>
         <div class="lcw-col lcw-pct">Since IPO</div>
         <div class="lcw-col lcw-date">Listed</div>
         <div class="lcw-col lcw-mcap">Cap</div>
@@ -1088,6 +1096,7 @@ function buildStockDetailedRow(symbol, rank) {
       ${pctCell(perf['1Y'])}
       ${pctCell(perf['2Y'])}
       ${pctCell(perf['3Y'])}
+      ${pctCell(perf['5Y'])}
       ${pctCell(perf['Inception'])}
       <div class="lcw-col lcw-date">${p.ipoDate || '—'}</div>
       <div class="lcw-col lcw-mcap">${mcap}</div>
@@ -1145,6 +1154,7 @@ function updateStockDetailedRow(symbol) {
     ${pctCell(perf['1Y'])}
     ${pctCell(perf['2Y'])}
     ${pctCell(perf['3Y'])}
+    ${pctCell(perf['5Y'])}
     ${pctCell(perf['Inception'])}
     <div class="lcw-col lcw-date">${p.ipoDate || '—'}</div>
     <div class="lcw-col lcw-mcap">${mcap}</div>
