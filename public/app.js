@@ -3140,6 +3140,58 @@ async function loadMarketPulse() {
   } catch(e) { if (card) card.innerHTML = ''; }
 }
 
+async function loadCryptoPulse() {
+  const card = document.getElementById('crypto-pulse-card');
+  if (!card) return;
+  try {
+    const data = await api('GET', '/crypto-news-summary');
+    if (!data?.available) { card.innerHTML = ''; return; }
+
+    const isAI = data.aiPowered !== false;
+    const timeStr = data.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+
+    let headerRight = '';
+    if (isAI && data.sentiment) {
+      const sentimentColor = data.sentiment === 'Bullish' ? 'var(--green)' : data.sentiment === 'Bearish' ? 'var(--red)' : 'var(--orange)';
+      const sentimentIcon = data.sentiment === 'Bullish' ? '▲' : data.sentiment === 'Bearish' ? '▼' : '◆';
+      headerRight = `<span class="mp-sentiment" style="color:${sentimentColor}">${sentimentIcon} ${data.sentiment}</span>`;
+    }
+
+    card.innerHTML = `
+      <div class="market-pulse-card">
+        <div class="mp-header">
+          <span class="mp-title">${isAI ? '🤖 AI Crypto Pulse' : '📰 Top Crypto Headlines'}</span>
+          ${headerRight}
+          <span class="mp-time">${timeStr}</span>
+        </div>
+        ${isAI && data.sentimentReason ? `<div class="mp-reason">${escHtml(data.sentimentReason)}</div>` : ''}
+        <ul class="mp-bullets">
+          ${(data.bullets || []).map(b => `<li>${escHtml(b)}</li>`).join('')}
+        </ul>
+        ${!isAI ? `<div class="mp-setup-hint">💡 Add a <strong>Gemini API key</strong> to get AI-powered crypto sentiment</div>` : ''}
+      </div>`;
+  } catch(e) { if (card) card.innerHTML = ''; }
+}
+
+const _cryptoWhyMovingFetched = new Set();
+async function loadCryptoWhyMovingBadges(coins) {
+  for (const c of coins) {
+    if (_cryptoWhyMovingFetched.has(c.id)) continue;
+    const chg = c.change24h;
+    if (typeof chg !== 'number' || Math.abs(chg) < 5) continue;
+    _cryptoWhyMovingFetched.add(c.id);
+    try {
+      const data = await api('GET', `/crypto/${c.id}/why-moving?change=${chg.toFixed(2)}&symbol=${encodeURIComponent(c.symbol||'')}&name=${encodeURIComponent(c.name||'')}`);
+      if (!data?.reason) continue;
+      const el = document.getElementById(`crypto-why-${c.id}`);
+      if (!el) continue;
+      const dir = chg >= 0 ? 'up' : 'down';
+      el.innerHTML = `<span class="why-moving-tag ${dir}" title="AI-generated explanation">✦ ${escHtml(data.reason)}</span>`;
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 600));
+  }
+}
+
 const _whyMovingFetched = new Set();
 async function loadWhyMovingBadges(symbols) {
   for (const symbol of symbols) {
@@ -3555,6 +3607,10 @@ async function renderCryptoDashboard() {
   if (zoomCtrl) zoomCtrl.style.display = mode === 'detailed' ? 'flex' : 'none';
   // Lazy-load 6M change data in background for all visible coins
   setTimeout(() => _preload6MChange(visibleCoins), 1500);
+
+  // Load Crypto Pulse at top of dashboard
+  setTimeout(() => loadCryptoPulse(), 800);
+
   const newsSection = document.getElementById('crypto-news-section');
 
   if (mode === 'detailed') {
@@ -3576,6 +3632,7 @@ async function renderCryptoDashboard() {
     grid.className = 'stocks-grid';
     grid.innerHTML = visibleCoins.map(c => buildCryptoCard(c)).join('');
     if (newsSection) newsSection.style.display = '';  // show news panel in card view
+    setTimeout(() => loadCryptoWhyMovingBadges(visibleCoins), 2000);
   }
 }
 
@@ -3710,6 +3767,7 @@ function buildCryptoCard(c) {
         <span class="crypto-change ${dir}">${chg24}</span>
       </div>
       ${sparkSvg ? `<div class="crypto-sparkline">${sparkSvg}</div>` : ''}
+      <div class="why-moving-badge" id="crypto-why-${c.id}"></div>
       <div class="crypto-meta"><span>MCap: ${mcap}</span><span>Vol: ${vol}</span></div>
       <div class="crypto-hover-popup" id="crypto-hover-${c.id}" onclick="event.stopPropagation()"></div>
     </div>`;

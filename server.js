@@ -1385,29 +1385,29 @@ async function callGemini(prompt, maxTokens = 400) {
   return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
 }
 
-// ── News Summary (Market Pulse) — 6h cache ──
+// ── News Summary (Market Pulse) — 2h cache ──
 const newsSummaryCache = { data: null, fetchedAt: 0 };
-const NEWS_SUMMARY_TTL = 6 * 60 * 60 * 1000;
+const NEWS_SUMMARY_TTL = 2 * 60 * 60 * 1000;
 
 app.get('/api/news-summary', async (req, res) => {
   if (newsSummaryCache.data && (Date.now() - newsSummaryCache.fetchedAt) < NEWS_SUMMARY_TTL) {
     return res.json(newsSummaryCache.data);
   }
-  const articles = (latestNewsCache.data || []).slice(0, 20);
+  const articles = (latestNewsCache.data || []).slice(0, 30);
   if (!articles.length) return res.json({ available: false });
 
-  // Without Gemini: return top 3 headlines as a simple "pulse"
+  // Without Gemini: return top 5 headlines as a simple "pulse"
   if (!GEMINI_URL) {
-    const top3 = articles.slice(0, 3).map(a => a.title);
-    const summary = { available: true, aiPowered: false, bullets: top3, sentiment: null, generatedAt: new Date().toISOString() };
+    const top5 = articles.slice(0, 5).map(a => a.title);
+    const summary = { available: true, aiPowered: false, bullets: top5, sentiment: null, generatedAt: new Date().toISOString() };
     newsSummaryCache.data = summary; newsSummaryCache.fetchedAt = Date.now();
     return res.json(summary);
   }
 
   try {
     const headlines = articles.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
-    const prompt = `You are a senior financial analyst. Summarize these market headlines into a concise briefing.\n\nHeadlines:\n${headlines}\n\nRespond ONLY with this exact JSON (no markdown):\n{"bullets":["theme 1 as one sentence","theme 2 as one sentence","theme 3 as one sentence"],"sentiment":"Bullish","sentimentReason":"one short sentence"}`;
-    const text = await callGemini(prompt, 350);
+    const prompt = `You are a senior financial analyst. From these market headlines, identify the TOP 5 most important and market-impactful stories. For each, write ONE concise sentence explaining the story and its market impact.\n\nHeadlines:\n${headlines}\n\nRespond ONLY with this exact JSON (no markdown, no extra text):\n{"bullets":["story 1 + why it matters","story 2 + why it matters","story 3 + why it matters","story 4 + why it matters","story 5 + why it matters"],"sentiment":"Bullish","sentimentReason":"one short sentence explaining overall market tone"}`;
+    const text = await callGemini(prompt, 500);
     const match = text?.match(/\{[\s\S]*\}/);
     if (!match) return res.json({ available: false });
     const summary = { ...JSON.parse(match[0]), available: true, aiPowered: true, generatedAt: new Date().toISOString() };
@@ -1416,6 +1416,103 @@ app.get('/api/news-summary', async (req, res) => {
   } catch (e) {
     console.warn('News summary error:', e.message);
     res.json({ available: false });
+  }
+});
+
+// ── Crypto News Summary (Crypto Pulse) — 2h cache ──
+const cryptoSummaryCache = { data: null, fetchedAt: 0 };
+const CRYPTO_SUMMARY_TTL = 2 * 60 * 60 * 1000;
+
+app.get('/api/crypto-news-summary', async (req, res) => {
+  if (cryptoSummaryCache.data && (Date.now() - cryptoSummaryCache.fetchedAt) < CRYPTO_SUMMARY_TTL) {
+    return res.json(cryptoSummaryCache.data);
+  }
+  const articles = (cryptoNewsCache.data || []).slice(0, 30);
+  if (!articles.length) return res.json({ available: false });
+
+  // Without Gemini: return top 5 headlines
+  if (!GEMINI_URL) {
+    const top5 = articles.slice(0, 5).map(a => a.title);
+    const summary = { available: true, aiPowered: false, bullets: top5, sentiment: null, generatedAt: new Date().toISOString() };
+    cryptoSummaryCache.data = summary; cryptoSummaryCache.fetchedAt = Date.now();
+    return res.json(summary);
+  }
+
+  try {
+    const headlines = articles.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
+    const prompt = `You are a senior crypto market analyst. From these crypto headlines, identify the TOP 5 most important stories that could impact Bitcoin, Ethereum, and the broader crypto market. For each, write ONE concise sentence explaining the story and its crypto market impact.\n\nHeadlines:\n${headlines}\n\nRespond ONLY with this exact JSON (no markdown, no extra text):\n{"bullets":["story 1 + why it matters","story 2 + why it matters","story 3 + why it matters","story 4 + why it matters","story 5 + why it matters"],"sentiment":"Bullish","sentimentReason":"one short sentence explaining overall crypto market tone"}`;
+    const text = await callGemini(prompt, 500);
+    const match = text?.match(/\{[\s\S]*\}/);
+    if (!match) return res.json({ available: false });
+    const summary = { ...JSON.parse(match[0]), available: true, aiPowered: true, generatedAt: new Date().toISOString() };
+    cryptoSummaryCache.data = summary; cryptoSummaryCache.fetchedAt = Date.now();
+    res.json(summary);
+  } catch (e) {
+    console.warn('Crypto summary error:', e.message);
+    res.json({ available: false });
+  }
+});
+
+// ── Crypto Why Moving — 4h cache per coin ──
+const cryptoWhyMovingCache = {};
+const CRYPTO_WHY_TTL = 4 * 60 * 60 * 1000;
+
+function guessCryptoWhyMoving(title, change) {
+  const t = (title || '').toLowerCase();
+  if (/etf|spot etf|approval|approved/.test(t)) return change >= 0 ? 'ETF news' : 'ETF setback';
+  if (/hack|exploit|breach|stolen/.test(t)) return 'Security breach';
+  if (/sec|lawsuit|ban|illegal|crackdown/.test(t)) return 'Regulatory news';
+  if (/upgrade|bullish|buy|outperform/.test(t)) return 'Analyst upgrade';
+  if (/downgrade|bearish|sell/.test(t)) return 'Analyst downgrade';
+  if (/partnership|integration|adoption/.test(t)) return 'Adoption news';
+  if (/liquidat|short squeeze|long squeeze/.test(t)) return 'Liquidation cascade';
+  if (/halving|fork|upgrade|mainnet/.test(t)) return 'Protocol event';
+  if (/whale|large transfer|fund/.test(t)) return 'Whale activity';
+  if (/fed|rate|inflation|macro/.test(t)) return 'Macro driver';
+  return null;
+}
+
+app.get('/api/crypto/:id/why-moving', async (req, res) => {
+  const id = req.params.id.toLowerCase();
+  const change = parseFloat(req.query.change) || 0;
+  const symbol = (req.query.symbol || '').toUpperCase();
+  const name = (req.query.name || '').toLowerCase();
+  if (Math.abs(change) < 5) return res.json({ reason: null });
+
+  const cached = cryptoWhyMovingCache[id];
+  if (cached && (Date.now() - cached.fetchedAt) < CRYPTO_WHY_TTL) {
+    return res.json({ reason: cached.reason });
+  }
+  try {
+    const all = cryptoNewsCache.data || [];
+    const relevant = all.filter(a => {
+      const t = (a.title || '').toLowerCase();
+      return (symbol && t.includes(symbol.toLowerCase())) || (name && t.includes(name));
+    }).slice(0, 6);
+
+    if (!relevant.length) {
+      // Try broader crypto market news as context
+      const broad = all.slice(0, 5);
+      if (!broad.length) { cryptoWhyMovingCache[id] = { reason: null, fetchedAt: Date.now() }; return res.json({ reason: null }); }
+      const fallback = guessCryptoWhyMoving(broad[0].title, change);
+      cryptoWhyMovingCache[id] = { reason: fallback, fetchedAt: Date.now() };
+      return res.json({ reason: fallback });
+    }
+
+    let reason = null;
+    if (GEMINI_URL) {
+      const headlines = relevant.map(a => `- ${a.title}`).join('\n');
+      const dir = change >= 0 ? `up ${change.toFixed(1)}%` : `down ${Math.abs(change).toFixed(1)}%`;
+      const prompt = `Crypto ${symbol || id} is ${dir} today. Give a VERY SHORT reason (3-5 words max) based on these headlines. Only output the short phrase, nothing else.\n\nHeadlines:\n${headlines}`;
+      const text = await callGemini(prompt, 25);
+      reason = text?.replace(/["""*]/g, '').trim() || null;
+    }
+    if (!reason) reason = guessCryptoWhyMoving(relevant[0].title, change);
+
+    cryptoWhyMovingCache[id] = { reason, fetchedAt: Date.now() };
+    res.json({ reason });
+  } catch (e) {
+    res.json({ reason: null });
   }
 });
 
