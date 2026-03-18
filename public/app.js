@@ -3140,8 +3140,8 @@ async function loadMarketPulse() {
   } catch(e) { if (card) card.innerHTML = ''; }
 }
 
-async function loadCryptoPulse() {
-  const card = document.getElementById('crypto-pulse-card');
+async function loadCryptoPulse(targetId = 'crypto-news-pulse-card') {
+  const card = document.getElementById(targetId);
   if (!card) return;
   try {
     const data = await api('GET', '/crypto-news-summary');
@@ -3232,6 +3232,7 @@ async function renderCryptoNewsView() {
         <button class="btn-secondary" onclick="loadCryptoNews(true).then(renderCryptoNewsView)">🔄 Refresh</button>
       </div>
     </div>
+    <div id="crypto-news-pulse-card"></div>
     <!-- combined filter row: Breaking + sources on one line -->
     <div class="news-controls-compact" id="crypto-news-cat-bar" style="margin-bottom:10px">
       <div class="news-ctrl-group">
@@ -3256,6 +3257,9 @@ async function renderCryptoNewsView() {
   document.querySelectorAll('#crypto-news-tabs .news-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.src === _cryptoNewsViewFilter);
   });
+
+  // Load crypto pulse at top
+  setTimeout(() => loadCryptoPulse('crypto-news-pulse-card'), 300);
 
   // Load if cache empty
   if (!_cryptoNewsCache.length) {
@@ -3607,9 +3611,6 @@ async function renderCryptoDashboard() {
   if (zoomCtrl) zoomCtrl.style.display = mode === 'detailed' ? 'flex' : 'none';
   // Lazy-load 6M change data in background for all visible coins
   setTimeout(() => _preload6MChange(visibleCoins), 1500);
-
-  // Load Crypto Pulse at top of dashboard
-  setTimeout(() => loadCryptoPulse(), 800);
 
   const newsSection = document.getElementById('crypto-news-section');
 

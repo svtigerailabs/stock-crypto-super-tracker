@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock & Crypto Super Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=27" />
+  <link rel="stylesheet" href="styles.css?v=28" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
 </head>
 <body>
@@ -25,6 +25,9 @@
       <li class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
         <span class="nav-icon">⊞</span> Stock Dashboard
       </li>
+      <li class="nav-item" data-view="news" onclick="navigate('news')">
+        <span class="nav-icon">📰</span> Market News
+      </li>
       <li class="nav-item" data-view="sectors" onclick="navigate('sectors')">
         <span class="nav-icon">📊</span> Market Sectors
       </li>
@@ -39,9 +42,6 @@
       </li>
       <li class="nav-item" data-view="calendar" onclick="navigate('calendar')">
         <span class="nav-icon">📅</span> Calendar
-      </li>
-      <li class="nav-item" data-view="news" onclick="navigate('news')">
-        <span class="nav-icon">📰</span> Market News
       </li>
     </div>
     <!-- Crypto Group -->
@@ -677,6 +677,6 @@
 <div id="toast-container" class="toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js?v=27"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>

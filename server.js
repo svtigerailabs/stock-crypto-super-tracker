@@ -1579,6 +1579,28 @@ app.get('/api/crypto', async (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ─── CRYPTO CHART — Binance primary, Coinpaprika fallback ────────────────────
+// Helper: fetch daily close prices from Binance public klines API
+async function fetchBinancePrices(symbol, limit, endTime = null) {
+  let url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1d&limit=${Math.min(limit, 1000)}`;
+  if (endTime) url += `&endTime=${endTime}`;
+  const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`Binance ${r.status}`);
+  const data = await r.json();
+  if (!Array.isArray(data) || data.length < 2) throw new Error('No Binance data');
+  return data.map(k => parseFloat(k[4])); // k[4] = close price
+}
+
+// Helper: fetch daily close prices from Coinpaprika OHLCV (free, no key)
+async function fetchCoinpaprikaPrices(id, startDate, endDate) {
+  const url = `https://api.coinpaprika.com/v1/coins/${id}/ohlcv/historical?start=${startDate}&end=${endDate}`;
+  const r = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'StockCryptoSuperTracker/1.0' }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`Coinpaprika ${r.status}`);
+  const data = await r.json();
+  if (!Array.isArray(data) || data.length < 2) throw new Error('No Coinpaprika data');
+  return data.map(d => d.close).filter(v => v > 0);
+}
+
 const cryptoChartCache = {};
 app.get('/api/crypto/:id/chart', async (req, res) => {
   const { id } = req.params;
@@ -1586,33 +1608,54 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   const now = new Date();
   const cacheKey = `${id}_${range}`;
   const cached = cryptoChartCache[cacheKey];
-  const cacheTTL = range === '1d' ? 60 * 1000 : 10 * 60 * 1000; // 1 min for intraday, 10 min for longer ranges
+  const cacheTTL = range === '1d' ? 60 * 1000 : 10 * 60 * 1000;
   if (cached && (Date.now() - cached.at) < cacheTTL) return res.json(cached.data);
 
-  // Extract symbol from Coinpaprika ID: "btc-bitcoin" → "BTC"
   const symbol = id.split('-')[0].toUpperCase();
   const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
+  const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '3y': 1095, '5y': 1825 };
 
   try {
     let prices = [];
+
     if (range === '1d') {
-      // Last 24 hours hourly — CryptoCompare (free, no key needed)
-      const url = `https://min-api.cryptocompare.com/data/v2/histohour?fsym=${symbol}&tsym=USD&limit=24`;
-      const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
-      if (!r.ok) throw new Error(`CryptoCompare HTTP ${r.status}`);
-      const json = await r.json();
-      prices = (json.Data?.Data || []).map(d => d.close).filter(v => v > 0);
+      // Intraday: use Binance 1h klines (last 24 candles)
+      try {
+        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1h&limit=24`;
+        const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+        if (r.ok) {
+          const data = await r.json();
+          if (Array.isArray(data) && data.length >= 2) prices = data.map(k => parseFloat(k[4]));
+        }
+      } catch {}
     } else {
-      const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '3y': 1095, '5y': 1825 };
       const limit = LIMIT_MAP[range];
       if (!limit) return res.status(400).json({ error: 'Invalid range' });
-      const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&limit=${limit}`;
-      const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
-      if (!r.ok) throw new Error(`CryptoCompare HTTP ${r.status}`);
-      const json = await r.json();
-      prices = (json.Data?.Data || []).map(d => d.close).filter(v => v > 0);
+
+      // Primary: Binance daily klines
+      try {
+        if (limit <= 1000) {
+          prices = await fetchBinancePrices(symbol, limit);
+        } else {
+          // For 3Y (1095) or 5Y (1825): two requests to get full range
+          const recentPrices = await fetchBinancePrices(symbol, 1000);
+          const olderEndTime = Date.now() - 1000 * 86400000;
+          const olderPrices = await fetchBinancePrices(symbol, limit - 1000, olderEndTime);
+          prices = [...olderPrices, ...recentPrices];
+        }
+      } catch {}
+
+      // Fallback: Coinpaprika OHLCV (handles delisted coins like XMR, ZEC)
+      if (prices.length < 2) {
+        try {
+          const endDate = now.toISOString().split('T')[0];
+          const startDate = new Date(Date.now() - limit * 86400000).toISOString().split('T')[0];
+          prices = await fetchCoinpaprikaPrices(id, startDate, endDate);
+        } catch {}
+      }
     }
-    if (!prices.length) throw new Error('No chart data');
+
+    if (prices.length < 2) return res.status(500).json({ error: 'No chart data available' });
     cryptoChartCache[cacheKey] = { data: prices, at: Date.now() };
     res.json(prices);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1625,17 +1668,40 @@ app.get('/api/crypto/:id/inception', async (req, res) => {
   const cached = cryptoInceptionCache[id];
   if (cached && (Date.now() - cached.at) < 24 * 60 * 60 * 1000) return res.json(cached.data);
   const symbol = id.split('-')[0].toUpperCase();
+
+  let prices = [], firstTimestamp = null;
+
+  // Primary: Binance weekly klines from Jan 2009 (covers full crypto history up to ~2028)
   try {
-    const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&allData=true`;
+    const BTC_GENESIS = 1230768000000; // 2009-01-01 in ms
+    const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1w&limit=1000&startTime=${BTC_GENESIS}`;
     const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
-    if (!r.ok) throw new Error(`CryptoCompare ${r.status}`);
-    const json = await r.json();
-    const data = (json.Data?.Data || []).filter(d => d.close > 0 && d.time > 0);
-    if (data.length < 2) throw new Error('Not enough data');
-    const firstClose = data[0].close;
-    const lastClose = data[data.length - 1].close;
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data) && data.length >= 2) {
+        prices = data.map(k => parseFloat(k[4])).filter(v => v > 0);
+        firstTimestamp = data[0][0]; // open time ms
+      }
+    }
+  } catch {}
+
+  // Fallback: Coinpaprika OHLCV going back 5 years
+  if (prices.length < 2) {
+    try {
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - 5 * 365 * 86400000).toISOString().split('T')[0];
+      prices = await fetchCoinpaprikaPrices(id, startDate, endDate);
+      firstTimestamp = Date.now() - 5 * 365 * 86400000;
+    } catch {}
+  }
+
+  if (prices.length < 2) return res.status(500).json({ error: 'Not enough data' });
+
+  try {
+    const firstClose = prices[0];
+    const lastClose = prices[prices.length - 1];
     const change = ((lastClose - firstClose) / firstClose) * 100;
-    const d = new Date(data[0].time * 1000);
+    const d = new Date(firstTimestamp || Date.now());
     const listedDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     const result = { change, listedDate };
     cryptoInceptionCache[id] = { data: result, at: Date.now() };
