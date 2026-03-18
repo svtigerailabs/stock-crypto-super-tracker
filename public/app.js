@@ -2662,7 +2662,7 @@ async function removeFromDashboard(symbol) {
 /* ─── LATEST NEWS VIEW ────────────────────────────────────────── */
 let latestNewsData = null;
 let newsFilter = 'all';
-let newsCategoryFilter = 'all';
+let newsCategoryFilter = 'breaking';
 let newsClickHistory = JSON.parse(localStorage.getItem('newsClickHistory') || '{}');
 let newsCustomSymbols = JSON.parse(localStorage.getItem('newsCustomSymbols') || '[]');
 let savedArticles = JSON.parse(localStorage.getItem('savedArticles') || '[]');
@@ -2887,7 +2887,7 @@ function showOverwriteProfile(id) {
 }
 
 // All known sources (update tabs dynamically)
-const NEWS_SOURCES = ['Yahoo Finance', 'CNBC', 'Bloomberg', 'Reuters', 'MarketWatch'];
+const NEWS_SOURCES = ['Yahoo Finance', 'Google News'];
 const NEWS_CATEGORIES = [
   { key: 'breaking', label: '🔴 Breaking' },
   { key: 'portfolio', label: '💼 My Stocks' },
@@ -2941,7 +2941,7 @@ async function renderLatestNews() {
     <div class="news-controls-compact" id="news-controls-compact">
       <div class="news-ctrl-group">
         <span class="news-ctrl-label">Type</span>
-        ${NEWS_CATEGORIES.map(c => `<button class="news-chip ${c.key==='all'?'active':''}" data-cat="${c.key}" onclick="filterNewsCategory('${c.key}')">${c.label}</button>`).join('')}
+        ${NEWS_CATEGORIES.map(c => `<button class="news-chip ${c.key===newsCategoryFilter?'active':''}" data-cat="${c.key}" onclick="filterNewsCategory('${c.key}')">${c.label}</button>`).join('')}
       </div>
       <div class="news-ctrl-divider"></div>
       <div class="news-ctrl-group">

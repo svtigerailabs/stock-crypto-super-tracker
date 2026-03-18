@@ -1075,8 +1075,8 @@ html, body {
 .lcw-table-scroll-wrap::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 .lcw-table { width: 100%; border-radius: 10px; overflow-x: visible; overflow-y: hidden; border: 1px solid var(--border); min-width: 800px; }
 .lcw-crypto-table { min-width: 1140px; }
-/* Stock table total: 32+110+82+(8×54)+84+76+260 = 1076px */
-.lcw-stock { min-width: 1080px; }
+/* Stock table total: 32+110+82+(8×54)+84+76+130 = 946px */
+.lcw-stock { min-width: 950px; }
 
 /* Crypto table: #, ★icon, coin, price, ATH, ToATH, 1H, 24H, 7D, 30D, 6M, YTD, 1Y, 2Y, 3Y, mcap, vol, chart */
 .lcw-header {
@@ -1088,7 +1088,7 @@ html, body {
 }
 /* Stock table: #, stock, price, 1D, 7D, 1M, 3M, YTD, 1Y, 2Y, 3Y, cap, vol, chart */
 .lcw-stock .lcw-header {
-  grid-template-columns: 32px 110px 82px repeat(8, 54px) 84px 76px 260px;
+  grid-template-columns: 32px 110px 82px repeat(8, 54px) 84px 76px 130px;
 }
 
 .lcw-row {
@@ -1099,7 +1099,7 @@ html, body {
   font-size: 12px; transition: background .1s; cursor: pointer;
 }
 .lcw-stock .lcw-row {
-  grid-template-columns: 32px 110px 82px repeat(8, 54px) 84px 76px 260px;
+  grid-template-columns: 32px 110px 82px repeat(8, 54px) 84px 76px 130px;
   font-size: 11px;
 }
 .lcw-ath { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
