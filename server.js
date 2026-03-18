@@ -1579,26 +1579,16 @@ app.get('/api/crypto', async (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-// ─── CRYPTO CHART — Binance primary, Coinpaprika fallback ────────────────────
-// Helper: fetch daily close prices from Binance public klines API
-async function fetchBinancePrices(symbol, limit, endTime = null) {
-  let url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1d&limit=${Math.min(limit, 1000)}`;
-  if (endTime) url += `&endTime=${endTime}`;
-  const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
-  if (!r.ok) throw new Error(`Binance ${r.status}`);
-  const data = await r.json();
-  if (!Array.isArray(data) || data.length < 2) throw new Error('No Binance data');
-  return data.map(k => parseFloat(k[4])); // k[4] = close price
-}
-
-// Helper: fetch daily close prices from Coinpaprika OHLCV (free, no key)
-async function fetchCoinpaprikaPrices(id, startDate, endDate) {
-  const url = `https://api.coinpaprika.com/v1/coins/${id}/ohlcv/historical?start=${startDate}&end=${endDate}`;
-  const r = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'StockCryptoSuperTracker/1.0' }, signal: AbortSignal.timeout(10000) });
-  if (!r.ok) throw new Error(`Coinpaprika ${r.status}`);
-  const data = await r.json();
-  if (!Array.isArray(data) || data.length < 2) throw new Error('No Coinpaprika data');
-  return data.map(d => d.close).filter(v => v > 0);
+// ─── CRYPTO CHART — KuCoin public API (free, no key, US-accessible) ──────────
+// KuCoin candles: data is newest-first, close price at index 2, timestamps in seconds
+async function fetchKuCoinPrices(symbol, startAt, endAt, type = '1day') {
+  const url = `https://api.kucoin.com/api/v1/market/candles?type=${type}&symbol=${symbol}-USDT&startAt=${startAt}&endAt=${endAt}`;
+  const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
+  if (!r.ok) throw new Error(`KuCoin ${r.status}`);
+  const json = await r.json();
+  if (json.code !== '200000' || !Array.isArray(json.data) || json.data.length < 2) throw new Error('No KuCoin data');
+  // Reverse to chronological order; close is index 2
+  return { prices: json.data.slice().reverse().map(k => parseFloat(k[2])).filter(v => v > 0), firstTs: parseInt(json.data[json.data.length - 1][0]) * 1000 };
 }
 
 const cryptoChartCache = {};
@@ -1612,6 +1602,7 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   if (cached && (Date.now() - cached.at) < cacheTTL) return res.json(cached.data);
 
   const symbol = id.split('-')[0].toUpperCase();
+  const nowTs = Math.floor(Date.now() / 1000);
   const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
   const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '3y': 1095, '5y': 1825 };
 
@@ -1619,40 +1610,30 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
     let prices = [];
 
     if (range === '1d') {
-      // Intraday: use Binance 1h klines (last 24 candles)
+      // Intraday: 1h candles for last 24 hours
       try {
-        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1h&limit=24`;
-        const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
-        if (r.ok) {
-          const data = await r.json();
-          if (Array.isArray(data) && data.length >= 2) prices = data.map(k => parseFloat(k[4]));
-        }
+        const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - 86400, nowTs, '1hour');
+        prices = p;
       } catch {}
     } else {
       const limit = LIMIT_MAP[range];
       if (!limit) return res.status(400).json({ error: 'Invalid range' });
+      const startAt = nowTs - limit * 86400;
 
-      // Primary: Binance daily klines
       try {
-        if (limit <= 1000) {
-          prices = await fetchBinancePrices(symbol, limit);
+        if (limit <= 1500) {
+          const { prices: p } = await fetchKuCoinPrices(symbol, startAt, nowTs);
+          prices = p;
         } else {
-          // For 3Y (1095) or 5Y (1825): two requests to get full range
-          const recentPrices = await fetchBinancePrices(symbol, 1000);
-          const olderEndTime = Date.now() - 1000 * 86400000;
-          const olderPrices = await fetchBinancePrices(symbol, limit - 1000, olderEndTime);
-          prices = [...olderPrices, ...recentPrices];
+          // 5Y (1825d): two sequential calls to avoid hitting 1500-candle limit
+          const midTs = nowTs - 1500 * 86400;
+          const [{ prices: older }, { prices: recent }] = await Promise.all([
+            fetchKuCoinPrices(symbol, startAt, midTs),
+            fetchKuCoinPrices(symbol, midTs, nowTs),
+          ]);
+          prices = [...older, ...recent];
         }
       } catch {}
-
-      // Fallback: Coinpaprika OHLCV (handles delisted coins like XMR, ZEC)
-      if (prices.length < 2) {
-        try {
-          const endDate = now.toISOString().split('T')[0];
-          const startDate = new Date(Date.now() - limit * 86400000).toISOString().split('T')[0];
-          prices = await fetchCoinpaprikaPrices(id, startDate, endDate);
-        } catch {}
-      }
     }
 
     if (prices.length < 2) return res.status(500).json({ error: 'No chart data available' });
@@ -1668,40 +1649,15 @@ app.get('/api/crypto/:id/inception', async (req, res) => {
   const cached = cryptoInceptionCache[id];
   if (cached && (Date.now() - cached.at) < 24 * 60 * 60 * 1000) return res.json(cached.data);
   const symbol = id.split('-')[0].toUpperCase();
-
-  let prices = [], firstTimestamp = null;
-
-  // Primary: Binance weekly klines from Jan 2009 (covers full crypto history up to ~2028)
-  try {
-    const BTC_GENESIS = 1230768000000; // 2009-01-01 in ms
-    const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1w&limit=1000&startTime=${BTC_GENESIS}`;
-    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
-    if (r.ok) {
-      const data = await r.json();
-      if (Array.isArray(data) && data.length >= 2) {
-        prices = data.map(k => parseFloat(k[4])).filter(v => v > 0);
-        firstTimestamp = data[0][0]; // open time ms
-      }
-    }
-  } catch {}
-
-  // Fallback: Coinpaprika OHLCV going back 5 years
-  if (prices.length < 2) {
-    try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - 5 * 365 * 86400000).toISOString().split('T')[0];
-      prices = await fetchCoinpaprikaPrices(id, startDate, endDate);
-      firstTimestamp = Date.now() - 5 * 365 * 86400000;
-    } catch {}
-  }
-
-  if (prices.length < 2) return res.status(500).json({ error: 'Not enough data' });
+  const nowTs = Math.floor(Date.now() / 1000);
 
   try {
-    const firstClose = prices[0];
-    const lastClose = prices[prices.length - 1];
-    const change = ((lastClose - firstClose) / firstClose) * 100;
-    const d = new Date(firstTimestamp || Date.now());
+    // KuCoin weekly candles from Jan 2010 — 1500 weeks covers ~29 years (full crypto history)
+    const CRYPTO_GENESIS = 1262304000; // 2010-01-01 in seconds
+    const { prices, firstTs } = await fetchKuCoinPrices(symbol, CRYPTO_GENESIS, nowTs, '1week');
+    if (prices.length < 2) throw new Error('Not enough data');
+    const change = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+    const d = new Date(firstTs);
     const listedDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     const result = { change, listedDate };
     cryptoInceptionCache[id] = { data: result, at: Date.now() };
