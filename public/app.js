@@ -4716,11 +4716,13 @@ async function loadEconCalendar() {
     }
   } catch(e) { console.warn('Econ calendar load failed:', e.message); }
   renderEconCalendar();
+  // Also load earnings calendar alongside
+  if (!_earningsCalLoaded) loadEarningsCalendar();
 }
 
 function setEconCalRange(range) {
   _econCalRange = range;
-  document.querySelectorAll('.cal-range-btn').forEach(b => b.classList.toggle('active', b.dataset.range === range));
+  document.querySelectorAll('#cal-range-btns .cal-range-btn').forEach(b => b.classList.toggle('active', b.dataset.range === range));
   renderEconCalendar();
 }
 
@@ -4827,6 +4829,103 @@ function switchCalTab(tab) {
   document.getElementById('tv-cal-tab').style.display = tab === 'tv' ? '' : 'none';
   if (tab === 'econ' && !_econCalLoaded) loadEconCalendar();
   if (tab === 'tv') initTVCalendar();
+}
+
+/* ─── EARNINGS CALENDAR (Top 100 companies) ─────────────────── */
+let _earningsCalData = [];
+let _earningsCalLoaded = false;
+let _earningsCalRange = '3m';
+
+async function loadEarningsCalendar() {
+  const container = document.getElementById('earnings-cal-table');
+  if (!container) return;
+  try {
+    const data = await api('GET', '/earnings-calendar');
+    if (Array.isArray(data)) {
+      _earningsCalData = data;
+      _earningsCalLoaded = true;
+    }
+  } catch(e) { console.warn('Earnings calendar load failed:', e.message); }
+  renderEarningsCalendar();
+}
+
+function setEarningsCalRange(range) {
+  _earningsCalRange = range;
+  document.querySelectorAll('#earnings-cal-range-btns .cal-range-btn').forEach(b => b.classList.toggle('active', b.dataset.range === range));
+  renderEarningsCalendar();
+}
+
+function renderEarningsCalendar() {
+  const container = document.getElementById('earnings-cal-table');
+  if (!container) return;
+
+  if (!_earningsCalLoaded) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim)">Loading earnings calendar…</div>';
+    return;
+  }
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  let rangeMs;
+  if (_earningsCalRange === '1m') rangeMs = 30 * 86400000;
+  else if (_earningsCalRange === '3m') rangeMs = 91 * 86400000;
+  else if (_earningsCalRange === '6m') rangeMs = 182 * 86400000;
+  else rangeMs = 730 * 86400000; // 'all' = 2 years
+
+  const rangeEnd = new Date(now.getTime() + rangeMs);
+
+  const items = _earningsCalData
+    .filter(c => {
+      if (!c.earningsDate) return false;
+      const d = new Date(c.earningsDate);
+      return d >= new Date(todayStr) && d <= rangeEnd;
+    })
+    .sort((a, b) => a.earningsDate.localeCompare(b.earningsDate));
+
+  if (!items.length) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim)">No upcoming earnings in this period.</div>';
+    return;
+  }
+
+  // Group by date
+  const groups = {};
+  items.forEach(c => {
+    if (!groups[c.earningsDate]) groups[c.earningsDate] = [];
+    groups[c.earningsDate].push(c);
+  });
+
+  let html = '';
+  const todayDateStr = now.toISOString().split('T')[0];
+
+  for (const [date, cos] of Object.entries(groups)) {
+    const d = new Date(date + 'T12:00:00');
+    const daysUntil = Math.round((d - now) / 86400000);
+    const isToday = date === todayDateStr;
+    const isSoon = daysUntil <= 7;
+    const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const daysStr = isToday ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `${daysUntil}d`;
+    const urgencyClass = isToday ? 'ecal-today' : isSoon ? 'ecal-soon' : '';
+
+    html += `<div class="ecal-day-group ${urgencyClass}">
+      <div class="ecal-day-header">
+        <span class="ecal-day-label">${dayLabel}</span>
+        <span class="ecal-days-badge ${isToday ? 'today' : isSoon ? 'soon' : ''}">${daysStr}</span>
+      </div>`;
+
+    cos.forEach(c => {
+      const estLabel = c.estimated ? '<span class="ecal-est">est</span>' : '';
+      const sectorLabel = c.sector ? `<span class="ecal-sector">${c.sector}</span>` : '';
+      html += `<div class="ecal-row" onclick="navigate('dashboard');state.selectedSymbol='${escHtml(c.symbol)}';setTimeout(()=>openStockModal('${escHtml(c.symbol)}'),400)" title="View ${escHtml(c.symbol)} details">
+        <span class="ecal-symbol">${escHtml(c.symbol)}</span>
+        <span class="ecal-name">${escHtml(c.name)}${estLabel}</span>
+        ${sectorLabel}
+      </div>`;
+    });
+
+    html += `</div>`;
+  }
+
+  container.innerHTML = html;
 }
 
 let _calPeriod = 'week';

@@ -2105,6 +2105,68 @@ html, body {
 /* Calendar view-header more compact */
 #calendar-view .view-header { margin-bottom: 6px; padding-bottom: 6px; }
 
+/* ── Calendar split layout ── */
+.cal-split-layout {
+  display: flex; gap: 16px; align-items: flex-start;
+}
+.cal-split-left { flex: 1; min-width: 0; }
+.cal-split-right { width: 340px; flex-shrink: 0; }
+
+/* ── Earnings Calendar Panel ── */
+.earnings-cal-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.earnings-cal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; background: var(--card); border-bottom: 1px solid var(--border);
+  gap: 8px; flex-wrap: wrap;
+}
+.earnings-cal-title {
+  font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px;
+}
+.earnings-cal-subtitle { font-size: 10px; color: var(--text-dim); font-weight: 400; }
+.earnings-cal-range-btns { display: flex; gap: 3px; }
+.earnings-cal-table-wrap { max-height: calc(100vh - 200px); overflow-y: auto; }
+
+/* Earnings calendar rows */
+.ecal-day-group { border-bottom: 1px solid var(--border); }
+.ecal-day-group:last-child { border-bottom: none; }
+.ecal-day-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; background: var(--card); position: sticky; top: 0; z-index: 1;
+}
+.ecal-day-group.ecal-today .ecal-day-header { background: rgba(88,166,255,.1); }
+.ecal-day-group.ecal-soon .ecal-day-header { background: rgba(210,153,34,.07); }
+.ecal-day-label { font-size: 11px; font-weight: 700; color: var(--text); }
+.ecal-days-badge {
+  font-size: 10px; font-weight: 700; color: var(--text-dim);
+  background: var(--border); padding: 1px 6px; border-radius: 8px;
+}
+.ecal-days-badge.today { background: rgba(88,166,255,.2); color: var(--blue); }
+.ecal-days-badge.soon  { background: rgba(210,153,34,.2); color: var(--orange); }
+.ecal-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 5px 12px; border-bottom: 1px solid #1c2128;
+  cursor: pointer; transition: background .1s;
+}
+.ecal-row:last-child { border-bottom: none; }
+.ecal-row:hover { background: rgba(88,166,255,.05); }
+.ecal-symbol {
+  font-size: 12px; font-weight: 700; color: var(--blue);
+  min-width: 54px; flex-shrink: 0;
+}
+.ecal-name { font-size: 11px; color: var(--text-dim); flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ecal-est {
+  font-size: 9px; color: var(--orange); font-weight: 700; margin-left: 4px;
+  vertical-align: middle; text-transform: uppercase;
+}
+.ecal-sector {
+  font-size: 9px; color: var(--text-dim); background: var(--border);
+  padding: 1px 5px; border-radius: 6px; white-space: nowrap; flex-shrink: 0;
+}
+
 /* ── Screener length row (merged into .screener-controls) ── */
 .screener-length-row {
   display: none; /* merged into screener-controls */

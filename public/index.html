@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock & Crypto Super Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=21" />
+  <link rel="stylesheet" href="styles.css?v=23" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
 </head>
 <body>
@@ -215,8 +215,8 @@
   <section id="calendar-view" class="view">
     <div class="view-header">
       <div>
-        <h1 class="view-title">📅 Economic Calendar</h1>
-        <p class="view-subtitle" id="econ-cal-subtitle">This week's economic events &amp; data releases</p>
+        <h1 class="view-title">📅 Calendar</h1>
+        <p class="view-subtitle" id="econ-cal-subtitle">Economic events &amp; earnings reports</p>
       </div>
       <div class="header-actions">
         <div class="cal-period-tabs" id="cal-tab-switcher">
@@ -225,37 +225,61 @@
         </div>
       </div>
     </div>
-    <!-- Economic Calendar Tab -->
-    <div id="econ-cal-tab" class="cal-tab-content">
-      <div class="econ-cal-controls-row">
-        <!-- Range quick-select -->
-        <div class="cal-range-btns" id="cal-range-btns">
-          <button class="cal-range-btn active" data-range="1w" onclick="setEconCalRange('1w')">1W</button>
-          <button class="cal-range-btn" data-range="1m" onclick="setEconCalRange('1m')">1M</button>
-          <button class="cal-range-btn" data-range="1q" onclick="setEconCalRange('1q')">1Q</button>
-          <button class="cal-range-btn" data-range="1y" onclick="setEconCalRange('1y')">1Y</button>
+
+    <!-- Split layout: left = economic/tv calendar, right = earnings calendar -->
+    <div class="cal-split-layout">
+
+      <!-- LEFT: Economic / TradingView calendar -->
+      <div class="cal-split-left">
+        <!-- Economic Calendar Tab -->
+        <div id="econ-cal-tab" class="cal-tab-content">
+          <div class="econ-cal-controls-row">
+            <div class="cal-range-btns" id="cal-range-btns">
+              <button class="cal-range-btn active" data-range="1w" onclick="setEconCalRange('1w')">1W</button>
+              <button class="cal-range-btn" data-range="1m" onclick="setEconCalRange('1m')">1M</button>
+              <button class="cal-range-btn" data-range="1q" onclick="setEconCalRange('1q')">1Q</button>
+              <button class="cal-range-btn" data-range="1y" onclick="setEconCalRange('1y')">1Y</button>
+            </div>
+            <label class="cal-filter-check"><input type="checkbox" id="econ-impact-high" checked onchange="renderEconCalendar()"><span class="cal-chip high">🔴 High</span></label>
+            <label class="cal-filter-check"><input type="checkbox" id="econ-impact-medium" checked onchange="renderEconCalendar()"><span class="cal-chip medium">🟡 Med</span></label>
+            <label class="cal-filter-check"><input type="checkbox" id="econ-impact-low" onchange="renderEconCalendar()"><span class="cal-chip low">🟢 Low</span></label>
+            <input type="text" id="econ-search-input" class="form-input cal-search-input-compact" placeholder="🔍 Search events…" oninput="renderEconCalendar()" />
+          </div>
+          <div id="econ-cal-table" class="econ-cal-table-wrap"></div>
         </div>
-        <!-- Impact filters inline -->
-        <label class="cal-filter-check"><input type="checkbox" id="econ-impact-high" checked onchange="renderEconCalendar()"><span class="cal-chip high">🔴 High</span></label>
-        <label class="cal-filter-check"><input type="checkbox" id="econ-impact-medium" checked onchange="renderEconCalendar()"><span class="cal-chip medium">🟡 Med</span></label>
-        <label class="cal-filter-check"><input type="checkbox" id="econ-impact-low" onchange="renderEconCalendar()"><span class="cal-chip low">🟢 Low</span></label>
-        <!-- Search -->
-        <input type="text" id="econ-search-input" class="form-input cal-search-input-compact" placeholder="🔍 Search events…" oninput="renderEconCalendar()" />
-      </div>
-      <div id="econ-cal-table" class="econ-cal-table-wrap"></div>
-    </div>
-    <!-- TradingView Tab -->
-    <div id="tv-cal-tab" class="cal-tab-content" style="display:none">
-      <div class="cal-controls">
-        <div class="cal-impact-filters">
-          <span class="cal-filter-label">Impact:</span>
-          <label class="cal-filter-check"><input type="checkbox" id="cal-impact-high" checked onchange="refreshCalendarFilters()"><span class="cal-chip high">🔴 High</span></label>
-          <label class="cal-filter-check"><input type="checkbox" id="cal-impact-medium" onchange="refreshCalendarFilters()"><span class="cal-chip medium">🟡 Medium</span></label>
-          <label class="cal-filter-check"><input type="checkbox" id="cal-impact-low" onchange="refreshCalendarFilters()"><span class="cal-chip low">🟢 Low</span></label>
+        <!-- TradingView Tab -->
+        <div id="tv-cal-tab" class="cal-tab-content" style="display:none">
+          <div class="cal-controls">
+            <div class="cal-impact-filters">
+              <span class="cal-filter-label">Impact:</span>
+              <label class="cal-filter-check"><input type="checkbox" id="cal-impact-high" checked onchange="refreshCalendarFilters()"><span class="cal-chip high">🔴 High</span></label>
+              <label class="cal-filter-check"><input type="checkbox" id="cal-impact-medium" onchange="refreshCalendarFilters()"><span class="cal-chip medium">🟡 Medium</span></label>
+              <label class="cal-filter-check"><input type="checkbox" id="cal-impact-low" onchange="refreshCalendarFilters()"><span class="cal-chip low">🟢 Low</span></label>
+            </div>
+          </div>
+          <div class="tv-widget-container" id="tv-calendar-container"></div>
         </div>
       </div>
-      <div class="tv-widget-container" id="tv-calendar-container"></div>
-    </div>
+
+      <!-- RIGHT: Earnings Calendar (Top 100) -->
+      <div class="cal-split-right">
+        <div class="earnings-cal-panel">
+          <div class="earnings-cal-header">
+            <span class="earnings-cal-title">📈 Earnings Calendar <span class="earnings-cal-subtitle">Top 100 Companies</span></span>
+            <div class="earnings-cal-range-btns" id="earnings-cal-range-btns">
+              <button class="cal-range-btn" data-range="1m" onclick="setEarningsCalRange('1m')">1M</button>
+              <button class="cal-range-btn active" data-range="3m" onclick="setEarningsCalRange('3m')">3M</button>
+              <button class="cal-range-btn" data-range="6m" onclick="setEarningsCalRange('6m')">6M</button>
+              <button class="cal-range-btn" data-range="all" onclick="setEarningsCalRange('all')">All</button>
+            </div>
+          </div>
+          <div id="earnings-cal-table" class="earnings-cal-table-wrap">
+            <div style="padding:24px;text-align:center;color:var(--text-dim)">Loading earnings calendar…</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end cal-split-layout -->
   </section>
 
   <!-- MARKET SCREENER VIEW -->
@@ -657,6 +681,6 @@
 <div id="toast-container" class="toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

@@ -1280,6 +1280,90 @@ app.get('/api/economic-calendar', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Earnings Calendar (top 100 S&P 500 by market cap) ──
+const TOP100_SYMBOLS = [
+  'AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','BRK-B','AVGO','LLY',
+  'JPM','V','ORCL','UNH','WMT','MA','XOM','NFLX','COST','HD',
+  'JNJ','BAC','PG','ABBV','AMD','KO','CSCO','CRM','WFC','ACN',
+  'GS','MS','CVX','MRK','TMO','NOW','ISRG','IBM','ABT','LIN',
+  'NEE','CAT','DHR','BX','GE','TJX','AXP','MCD','AMGN','RTX',
+  'PM','INTU','QCOM','UBER','BSX','VZ','PFE','T','LOW','NKE',
+  'CB','PLTR','BKNG','SPGI','BLK','ELV','SYK','C','MMC','PLD',
+  'DE','DUK','SO','MO','ETN','HON','CME','AON','ITW','USB',
+  'PNC','WM','ZTS','EMR','MCO','INTC','TT','APH','ECL','COF',
+  'SCHW','F','GM','NSC','FDX','UPS','DIS','PYPL','ADSK','TGT',
+];
+
+let earningsCalCache = { data: null, fetchedAt: 0 };
+const EARNINGS_CAL_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+async function fetchEarningsCalendar() {
+  if (earningsCalCache.data && (Date.now() - earningsCalCache.fetchedAt) < EARNINGS_CAL_TTL) {
+    return earningsCalCache.data;
+  }
+  // Batch fetch via crumb-authenticated v7 quote API (50 at a time)
+  await ensureCrumb();
+  if (!yfCrumb) {
+    console.warn('Earnings calendar: no crumb available, falling back to per-symbol fetch');
+    return fetchEarningsCalendarFallback();
+  }
+
+  const BATCH = 50;
+  const results = [];
+  for (let i = 0; i < TOP100_SYMBOLS.length; i += BATCH) {
+    const batch = TOP100_SYMBOLS.slice(i, i + BATCH);
+    try {
+      const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${batch.join(',')}&formatted=false&crumb=${encodeURIComponent(yfCrumb)}`;
+      const res = await fetch(url, { headers: { ...YF_UA, Cookie: yfCookies } });
+      if (!res.ok) {
+        if (res.status === 401) { yfCrumb = null; yfCrumbFetchedAt = 0; }
+        continue;
+      }
+      const json = await res.json();
+      const quotes = json.quoteResponse?.result || [];
+      console.log(`Earnings calendar batch ${i/BATCH+1}: ${quotes.length} quotes`);
+      for (const q of quotes) {
+        // earningsTimestampStart = next earnings window start (most reliable for future date)
+        const ts = q.earningsTimestampStart || q.earningsTimestamp;
+        const tsEnd = q.earningsTimestampEnd;
+        const estimated = tsEnd && ts && (tsEnd - ts) > 3 * 86400;
+        results.push({
+          symbol: q.symbol,
+          name: q.shortName || q.symbol,
+          earningsDate: ts ? new Date(ts * 1000).toISOString().split('T')[0] : null,
+          estimated: !!estimated,
+          sector: q.sector || null,
+        });
+      }
+    } catch (e) { console.warn('Earnings calendar batch error:', e.message); }
+    if (i + BATCH < TOP100_SYMBOLS.length) await new Promise(r => setTimeout(r, 200));
+  }
+  earningsCalCache = { data: results, fetchedAt: Date.now() };
+  return results;
+}
+
+// Fallback: fetch earnings date per symbol using yfEarningsDate (slower but reliable)
+async function fetchEarningsCalendarFallback() {
+  const CONCURRENCY = 5;
+  const results = [];
+  for (let i = 0; i < TOP100_SYMBOLS.length; i += CONCURRENCY) {
+    const batch = TOP100_SYMBOLS.slice(i, i + CONCURRENCY);
+    const batchRes = await Promise.all(batch.map(async sym => {
+      const date = await yfEarningsDate(sym).catch(() => null);
+      return { symbol: sym, name: sym, earningsDate: date ? date.toISOString().split('T')[0] : null, estimated: false, sector: null };
+    }));
+    results.push(...batchRes);
+    if (i + CONCURRENCY < TOP100_SYMBOLS.length) await new Promise(r => setTimeout(r, 200));
+  }
+  earningsCalCache = { data: results, fetchedAt: Date.now() };
+  return results;
+}
+
+app.get('/api/earnings-calendar', async (req, res) => {
+  try { res.json(await fetchEarningsCalendar()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/crypto', async (req, res) => {
   try { res.json(await fetchCryptoData()); }
   catch (e) { res.status(400).json({ error: e.message }); }
