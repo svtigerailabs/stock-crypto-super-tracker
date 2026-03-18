@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock & Crypto Super Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=19" />
+  <link rel="stylesheet" href="styles.css?v=20" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
 </head>
 <body>
@@ -348,6 +348,12 @@
       </div>
       <div class="header-actions">
         <button class="crypto-star-toggle" id="crypto-fav-toggle" onclick="toggleCryptoFavFilter()" title="Toggle: show all coins or starred favorites only">☆ All Coins</button>
+        <div class="crypto-rank-filter">
+          <button class="crypto-rank-btn active" data-limit="50"  onclick="setCryptoRankLimit(50)">Top 50</button>
+          <button class="crypto-rank-btn"        data-limit="100" onclick="setCryptoRankLimit(100)">100</button>
+          <button class="crypto-rank-btn"        data-limit="200" onclick="setCryptoRankLimit(200)">200</button>
+          <button class="crypto-rank-btn"        data-limit="500" onclick="setCryptoRankLimit(500)">500</button>
+        </div>
         <div class="view-toggle" id="crypto-view-toggle">
           <button class="view-toggle-btn" data-mode="heatmap" onclick="switchCryptoView('heatmap')" title="Crypto Heatmap">🗺️</button>
           <button class="view-toggle-btn" data-mode="grid" onclick="switchCryptoView('grid')" title="Card View">⊞</button>
@@ -670,6 +676,6 @@
 <div id="toast-container" class="toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

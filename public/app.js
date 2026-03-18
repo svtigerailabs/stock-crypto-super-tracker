@@ -20,6 +20,7 @@ const state = {
   pinnedCryptoIds: JSON.parse(localStorage.getItem('pinnedCryptoIds') || '[]'),
   favoriteCryptoIds: JSON.parse(localStorage.getItem('favoriteCryptoIds') || '[]'),
   cryptoFilterMode: localStorage.getItem('cryptoFilterMode') || 'default',
+  cryptoRankLimit: parseInt(localStorage.getItem('cryptoRankLimit') || '50', 10),
   stockChartPeriod: '1d', stockCharts: {},
   alertsMuted: localStorage.getItem('alertsMuted') === 'true',
 };
@@ -691,10 +692,33 @@ function renderTickerMarquee(type) {
   const trackEl = document.getElementById(`${type}-ticker-track`);
   if (!trackEl) return;
 
-  // ── CRYPTO TICKER: headlines only, no coin prices, top 3 ──────
+  // ── CRYPTO TICKER: coin price prefix + headlines ──────────────
   if (type === 'crypto') {
+    // Always build a coin price prefix (fallback when news unavailable)
+    const TOP_COINS = ['bitcoin','ethereum','tether','ripple','binancecoin','solana','usd-coin','dogecoin'];
+    let coinPrefix = '';
+    if (state.cryptoData?.length) {
+      const coins = state.cryptoData
+        .filter(c => c.price && TOP_COINS.some(t => c.id.startsWith(t)))
+        .sort((a,b) => (a.rank||999)-(b.rank||999)).slice(0,6);
+      if (!coins.length) {
+        // fallback: just use top ranked coins with prices
+        state.cryptoData.filter(c=>c.price).slice(0,6).forEach(c => coins.push(c));
+      }
+      coinPrefix = coins.map(c => {
+        const chg = c.change24h;
+        return `<span class="ticker-item"><span class="ticker-title">${c.symbol}</span>` +
+          `<span class="ticker-meta" style="color:${(chg||0)>=0?'var(--green)':'var(--red)'}">${cryptoPriceFmt(c.price)} ${chg!=null?`(${chg>=0?'+':''}${chg.toFixed(2)}%)`:''}</span>` +
+          `<span class="ticker-sep">◆</span></span>`;
+      }).join('');
+    }
     if (!articles.length) {
-      trackEl.innerHTML = '<span class="ticker-loading">Loading crypto headlines…</span>';
+      if (coinPrefix) {
+        trackEl.innerHTML = coinPrefix + coinPrefix;
+        _restartTickerAnim(trackEl);
+      } else {
+        trackEl.innerHTML = '<span class="ticker-loading">Loading crypto data…</span>';
+      }
       return;
     }
     const makeItems = (list) => list.map(art => {
@@ -705,9 +729,8 @@ function renderTickerMarquee(type) {
         `<span class="ticker-title">${escHtml(art.title || '')}</span>` +
         `</a><span class="ticker-sep">◆</span>`;
     }).join('');
-    const top3 = articles.slice(0, 3);
-    const content = makeItems(top3);
-    trackEl.innerHTML = content + content;
+    const allContent = coinPrefix + makeItems(articles.slice(0, 8));
+    trackEl.innerHTML = allContent + allContent;
     _restartTickerAnim(trackEl);
     return;
   }
@@ -3433,8 +3456,8 @@ async function renderCryptoDashboard() {
   const subtitle = document.getElementById('crypto-subtitle');
   if (subtitle) subtitle.textContent = `${state.cryptoData.length} coins · Updated ${new Date().toLocaleTimeString()}`;
 
-  // Re-render crypto ticker now that data is loaded
-  if (!tickerState.crypto?.articles?.length) renderTickerMarquee('crypto');
+  // Re-render crypto ticker now that coin price data is available
+  renderTickerMarquee('crypto');
 
   // Apply filter mode
   let visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
@@ -3443,8 +3466,11 @@ async function renderCryptoDashboard() {
     // If no favorites yet, show all with a hint
     visibleCoins = favs.length ? favs : visibleCoins;
   }
-  // 'all' and 'default' both show full list — sort by rank
+  // 'all' and 'default' both show full list — sort by rank, then apply limit
   visibleCoins = visibleCoins.sort((a, b) => (a.rank || 999) - (b.rank || 999));
+  if (state.cryptoFilterMode !== 'favorites') {
+    visibleCoins = visibleCoins.slice(0, state.cryptoRankLimit);
+  }
   _updateCryptoFilterBtns();
   const mode = state.cryptoViewMode;
   // Show/hide zoom controls based on mode
@@ -4101,6 +4127,19 @@ function setCryptoFilterMode(mode) {
   localStorage.setItem('cryptoFilterMode', mode);
   _updateCryptoFilterBtns();
   renderCryptoDashboard();
+}
+
+function setCryptoRankLimit(n) {
+  state.cryptoRankLimit = n;
+  localStorage.setItem('cryptoRankLimit', String(n));
+  _updateCryptoRankBtns();
+  renderCryptoDashboard();
+}
+
+function _updateCryptoRankBtns() {
+  document.querySelectorAll('.crypto-rank-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.limit) === state.cryptoRankLimit);
+  });
 }
 
 function _updateCryptoFilterBtns() {

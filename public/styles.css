@@ -1965,6 +1965,20 @@ html, body {
 .crypto-star-toggle:hover { background: var(--card); color: #f0c040; border-color: #f0c040; }
 .crypto-star-toggle.active { background: rgba(240,192,64,.15); border-color: #f0c040; color: #f0c040; }
 
+/* ── Crypto Rank Limit Filter ── */
+.crypto-rank-filter {
+  display: flex; gap: 2px; align-items: center;
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  padding: 2px; margin-right: 6px;
+}
+.crypto-rank-btn {
+  background: none; border: none; color: var(--text-dim); padding: 3px 9px;
+  border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 700;
+  font-family: inherit; transition: all .12s;
+}
+.crypto-rank-btn:hover { background: var(--surface); color: var(--text); }
+.crypto-rank-btn.active { background: var(--blue-dim); color: #fff; }
+
 /* ── Crypto Star / Favorite Button ── */
 .crypto-star-btn {
   background: none; border: none; cursor: pointer; font-size: 14px;
