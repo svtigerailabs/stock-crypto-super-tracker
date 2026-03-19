@@ -1641,7 +1641,7 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   const symbol = id.split('-')[0].toUpperCase();
   const nowTs = Math.floor(Date.now() / 1000);
   const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
-  const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '3y': 1095, '5y': 1825 };
+  const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '3y': 1095, '4y': 1460, '5y': 1825 };
 
   try {
     let prices = [];

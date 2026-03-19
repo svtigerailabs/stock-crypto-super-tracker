@@ -198,9 +198,18 @@ function _computeAndUpdateExtPerf2Y(c, prices) {
   if (y2El  && c.change2y  != null) { const d = c.change2y  >= 0 ? 'up' : 'down'; y2El.className  = `lcw-col lcw-pct ${d} lcw-2y-col`;  y2El.textContent  = fmtLargePct(c.change2y);  }
 }
 
+function _computeAndUpdateExtPerf4Y(c, prices) {
+  // Guard: require ≥1200 candles (82% of 1460 expected).
+  // Coins listed <~3.3 years ago on KuCoin will show '—'.
+  if (prices.length < 1200) { c.change4y = null; return; }
+  c.change4y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+  const y4El = document.querySelector(`#lcw-crypto-${c.id} .lcw-4y-col`);
+  if (y4El) { const d = c.change4y >= 0 ? 'up' : 'down'; y4El.className = `lcw-col lcw-pct ${d} lcw-4y-col`; y4El.textContent = fmtLargePct(c.change4y); }
+}
+
 function _computeAndUpdateExtPerf5Y(c, prices) {
-  // Guard: require ≥1500 candles — if fewer, the coin wasn't listed 5Y ago on KuCoin
-  // (1500 / 1825 ≈ 82% coverage). Coins listed <~4 years ago will show '—'.
+  // Guard: require ≥1500 candles (82% of 1825 expected).
+  // Coins listed <~4.1 years ago on KuCoin will show '—'.
   if (prices.length < 1500) { c.change5y = null; return; }
   c.change5y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
   const y5El = document.querySelector(`#lcw-crypto-${c.id} .lcw-5y-col`);
@@ -260,7 +269,25 @@ async function _preloadCryptoExtPerf(coins) {
     if (i + 3 < toFetch3y.length) await new Promise(r => setTimeout(r, 600));
   }
 
-  // Step 4: Fetch 5Y data in batches of 3 (uses KuCoin; shows '—' for coins <~4Y old)
+  // Step 4: Fetch 4Y data in batches of 3 (uses KuCoin; shows '—' for coins <~3.3Y old)
+  const needs4yList = coins.filter(c => c.change4y == null);
+  needs4yList.filter(c => state.cryptoCharts[c.id]?.['4y']?.length >= 2).forEach(c => _computeAndUpdateExtPerf4Y(c, state.cryptoCharts[c.id]['4y']));
+  const toFetch4y = needs4yList.filter(c => !state.cryptoCharts[c.id]?.['4y']);
+  for (let i = 0; i < toFetch4y.length; i += 3) {
+    const batch = toFetch4y.slice(i, i + 3);
+    await Promise.all(batch.map(async c => {
+      try {
+        const prices = await api('GET', `/crypto/${c.id}/chart?range=4y`);
+        if (!Array.isArray(prices) || prices.length < 2) return;
+        if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+        state.cryptoCharts[c.id]['4y'] = prices;
+        _computeAndUpdateExtPerf4Y(c, prices);
+      } catch {}
+    }));
+    if (i + 3 < toFetch4y.length) await new Promise(r => setTimeout(r, 600));
+  }
+
+  // Step 5: Fetch 5Y data in batches of 3 (uses KuCoin; shows '—' for coins <~4Y old)
   const needs5yList = coins.filter(c => c.change5y == null);
   needs5yList.filter(c => state.cryptoCharts[c.id]?.['5y']?.length >= 2).forEach(c => _computeAndUpdateExtPerf5Y(c, state.cryptoCharts[c.id]['5y']));
   const toFetch5y = needs5yList.filter(c => !state.cryptoCharts[c.id]?.['5y']);
@@ -4007,6 +4034,7 @@ function buildCryptoDetailedTable(coins) {
         ${fmtPctCell(c.change1y)}
         <div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}">${c.change2y != null ? fmtLargePct(c.change2y) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}">${c.change3y != null ? fmtLargePct(c.change3y) : '—'}</div>
+        <div class="lcw-col lcw-pct lcw-4y-col${c.change4y != null ? (c.change4y >= 0 ? ' up' : ' down') : ''}">${c.change4y != null ? fmtLargePct(c.change4y) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-5y-col${c.change5y != null ? (c.change5y >= 0 ? ' up' : ' down') : ''}">${c.change5y != null ? fmtLargePct(c.change5y) : '—'}</div>
         <div class="lcw-col lcw-mcap">${mcap}</div>
         <div class="lcw-col lcw-vol">${vol}</div>
@@ -4039,6 +4067,7 @@ function buildCryptoDetailedTable(coins) {
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
+        <div class="lcw-col lcw-pct">4Y</div>
         <div class="lcw-col lcw-pct">5Y</div>
         <div class="lcw-col lcw-mcap">Mkt Cap</div>
         <div class="lcw-col lcw-vol">Volume</div>
