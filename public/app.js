@@ -198,6 +198,14 @@ function _computeAndUpdateExtPerf2Y(c, prices) {
   if (y2El  && c.change2y  != null) { const d = c.change2y  >= 0 ? 'up' : 'down'; y2El.className  = `lcw-col lcw-pct ${d} lcw-2y-col`;  y2El.textContent  = fmtLargePct(c.change2y);  }
 }
 
+function _computeAndUpdateExtPerf5Y(c, prices) {
+  // Guard: require ≥1500 candles — if fewer, the coin wasn't listed 5Y ago on KuCoin
+  // (1500 / 1825 ≈ 82% coverage). Coins listed <~4 years ago will show '—'.
+  if (prices.length < 1500) { c.change5y = null; return; }
+  c.change5y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+  const y5El = document.querySelector(`#lcw-crypto-${c.id} .lcw-5y-col`);
+  if (y5El) { const d = c.change5y >= 0 ? 'up' : 'down'; y5El.className = `lcw-col lcw-pct ${d} lcw-5y-col`; y5El.textContent = fmtLargePct(c.change5y); }
+}
 
 async function _preloadCryptoExtPerf(coins) {
   // Separate coins by what they need
@@ -252,6 +260,23 @@ async function _preloadCryptoExtPerf(coins) {
     if (i + 3 < toFetch3y.length) await new Promise(r => setTimeout(r, 600));
   }
 
+  // Step 4: Fetch 5Y data in batches of 3 (uses KuCoin; shows '—' for coins <~4Y old)
+  const needs5yList = coins.filter(c => c.change5y == null);
+  needs5yList.filter(c => state.cryptoCharts[c.id]?.['5y']?.length >= 2).forEach(c => _computeAndUpdateExtPerf5Y(c, state.cryptoCharts[c.id]['5y']));
+  const toFetch5y = needs5yList.filter(c => !state.cryptoCharts[c.id]?.['5y']);
+  for (let i = 0; i < toFetch5y.length; i += 3) {
+    const batch = toFetch5y.slice(i, i + 3);
+    await Promise.all(batch.map(async c => {
+      try {
+        const prices = await api('GET', `/crypto/${c.id}/chart?range=5y`);
+        if (!Array.isArray(prices) || prices.length < 2) return;
+        if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+        state.cryptoCharts[c.id]['5y'] = prices;
+        _computeAndUpdateExtPerf5Y(c, prices);
+      } catch {}
+    }));
+    if (i + 3 < toFetch5y.length) await new Promise(r => setTimeout(r, 600));
+  }
 }
 
 async function _preloadCryptoCharts() {
@@ -3982,6 +4007,7 @@ function buildCryptoDetailedTable(coins) {
         ${fmtPctCell(c.change1y)}
         <div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}">${c.change2y != null ? fmtLargePct(c.change2y) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}">${c.change3y != null ? fmtLargePct(c.change3y) : '—'}</div>
+        <div class="lcw-col lcw-pct lcw-5y-col${c.change5y != null ? (c.change5y >= 0 ? ' up' : ' down') : ''}">${c.change5y != null ? fmtLargePct(c.change5y) : '—'}</div>
         <div class="lcw-col lcw-mcap">${mcap}</div>
         <div class="lcw-col lcw-vol">${vol}</div>
         <div class="lcw-col lcw-chart" id="crypto-chart-${c.id}">${sparkSvg}</div>
@@ -4013,6 +4039,7 @@ function buildCryptoDetailedTable(coins) {
         <div class="lcw-col lcw-pct">1Y</div>
         <div class="lcw-col lcw-pct">2Y</div>
         <div class="lcw-col lcw-pct">3Y</div>
+        <div class="lcw-col lcw-pct">5Y</div>
         <div class="lcw-col lcw-mcap">Mkt Cap</div>
         <div class="lcw-col lcw-vol">Volume</div>
         <div class="lcw-col lcw-chart"><span class="chart-period-toggle">${periodBtns}</span></div>

@@ -1628,24 +1628,6 @@ async function fetchKuCoinPrices(symbol, startAt, endAt, type = '1day') {
   return { prices: json.data.slice().reverse().map(k => parseFloat(k[2])).filter(v => v > 0), firstTs: parseInt(json.data[json.data.length - 1][0]) * 1000 };
 }
 
-// CryptoCompare daily prices — aggregated USD spot data from multiple exchanges
-// More accurate than single-exchange USDT pairs for ROI calculations
-let _ccLastCall = 0;
-async function fetchCryptoCompareDailyPrices(symbol, limit) {
-  // Simple rate limiter: min 250ms between calls to stay under free-tier limits
-  const wait = Math.max(0, 250 - (Date.now() - _ccLastCall));
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  _ccLastCall = Date.now();
-  const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&limit=${limit}`;
-  const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
-  if (!r.ok) throw new Error(`CryptoCompare HTTP ${r.status}`);
-  const json = await r.json();
-  if (json.Response !== 'Success' || !json.Data?.Data?.length) throw new Error(json.Message || 'No CryptoCompare data');
-  const prices = json.Data.Data.filter(d => d.close > 0).map(d => d.close);
-  if (prices.length < 2) throw new Error('Not enough CryptoCompare data');
-  return prices;
-}
-
 const cryptoChartCache = {};
 app.get('/api/crypto/:id/chart', async (req, res) => {
   const { id } = req.params;
@@ -1666,37 +1648,26 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
     const limit = LIMIT_MAP[range];
 
     if (range === '1d') {
-      // Intraday: 1h candles for last 24 hours — KuCoin only
+      // Intraday: 1h candles for last 24 hours
       try {
         const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - 86400, nowTs, '1hour');
         prices = p;
       } catch {}
     } else if (!limit) {
       return res.status(400).json({ error: 'Invalid range' });
-    } else if (limit >= 365) {
-      // ≥1Y ranges: use CryptoCompare (aggregated USD spot, multi-exchange)
-      // for more accurate ROI calculations, with KuCoin as fallback
+    } else if (limit > 1500) {
+      // 5Y (1825d): exceeds KuCoin's 1500-candle limit — use two sequential calls
       try {
-        prices = await fetchCryptoCompareDailyPrices(symbol, limit);
-      } catch {
-        // Fallback to KuCoin if CryptoCompare fails for this coin
-        try {
-          if (limit <= 1500) {
-            const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - limit * 86400, nowTs);
-            prices = p;
-          } else {
-            const midTs = nowTs - 1500 * 86400;
-            const startAt = nowTs - limit * 86400;
-            const [{ prices: older }, { prices: recent }] = await Promise.all([
-              fetchKuCoinPrices(symbol, startAt, midTs),
-              fetchKuCoinPrices(symbol, midTs, nowTs),
-            ]);
-            prices = [...older, ...recent];
-          }
-        } catch {}
-      }
+        const startAt = nowTs - limit * 86400;
+        const midTs = nowTs - 1500 * 86400;
+        const [{ prices: older }, { prices: recent }] = await Promise.all([
+          fetchKuCoinPrices(symbol, startAt, midTs),
+          fetchKuCoinPrices(symbol, midTs, nowTs),
+        ]);
+        prices = [...older, ...recent];
+      } catch {}
     } else {
-      // Short ranges (<1Y): KuCoin is fine (small USDT/USD difference)
+      // All other ranges: single KuCoin call
       const startAt = nowTs - limit * 86400;
       try {
         const { prices: p } = await fetchKuCoinPrices(symbol, startAt, nowTs);
