@@ -189,11 +189,24 @@ function fmtSmartPct(val) {
 function _computeAndUpdateExtPerf2Y(c, prices) {
   const now = new Date();
   const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
-  c.change2y = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+  const last = prices[prices.length - 1];
+
+  // 2Y: first → last
+  c.change2y = ((last - prices[0]) / prices[0]) * 100;
+
+  // 1Y: derived from the same 730d array — price ~365 days from the end
+  // (no extra API call needed; Coinpaprika's percent_change_1y is unreliable)
+  const oneYrIdx = Math.max(0, prices.length - 365 - 1);
+  if (prices[oneYrIdx] > 0) c.change1y = ((last - prices[oneYrIdx]) / prices[oneYrIdx]) * 100;
+
+  // YTD: price at Jan 1 of this year
   const ytdIdx = Math.max(0, prices.length - ytdDays - 1);
-  if (prices[ytdIdx] > 0) c.changeYTD = ((prices[prices.length - 1] - prices[ytdIdx]) / prices[ytdIdx]) * 100;
+  if (prices[ytdIdx] > 0) c.changeYTD = ((last - prices[ytdIdx]) / prices[ytdIdx]) * 100;
+
+  const y1El  = document.querySelector(`#lcw-crypto-${c.id} .lcw-1y-col`);
   const ytdEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-ytd-col`);
   const y2El  = document.querySelector(`#lcw-crypto-${c.id} .lcw-2y-col`);
+  if (y1El  && c.change1y  != null) { const d = c.change1y  >= 0 ? 'up' : 'down'; y1El.className  = `lcw-col lcw-pct ${d} lcw-1y-col`;  y1El.textContent  = fmtSmartPct(c.change1y);  }
   if (ytdEl && c.changeYTD != null) { const d = c.changeYTD >= 0 ? 'up' : 'down'; ytdEl.className = `lcw-col lcw-pct ${d} lcw-ytd-col`; ytdEl.textContent = fmtSmartPct(c.changeYTD); }
   if (y2El  && c.change2y  != null) { const d = c.change2y  >= 0 ? 'up' : 'down'; y2El.className  = `lcw-col lcw-pct ${d} lcw-2y-col`;  y2El.textContent  = fmtLargePct(c.change2y);  }
 }
@@ -218,7 +231,7 @@ function _computeAndUpdateExtPerf5Y(c, prices) {
 
 async function _preloadCryptoExtPerf(coins) {
   // Separate coins by what they need
-  const needs2yList = coins.filter(c => c.change2y == null || c.changeYTD == null);
+  const needs2yList = coins.filter(c => c.change2y == null || c.changeYTD == null || c.change1y == null);
   const needs3yList = coins.filter(c => c.change3y == null);
 
   // Step 1: Compute from cache immediately (no API call, instant)
@@ -4031,7 +4044,7 @@ function buildCryptoDetailedTable(coins) {
         <div class="lcw-col lcw-pct lcw-90d-col${c.change90d != null ? (c.change90d >= 0 ? ' up' : ' down') : ''}">${c.change90d != null ? fmtSmartPct(c.change90d) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}">${(c.change6m ?? c.change200d) != null ? fmtSmartPct(c.change6m ?? c.change200d) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-ytd-col${c.changeYTD != null ? (c.changeYTD >= 0 ? ' up' : ' down') : ''}">${c.changeYTD != null ? fmtSmartPct(c.changeYTD) : '—'}</div>
-        ${fmtPctCell(c.change1y)}
+        <div class="lcw-col lcw-pct lcw-1y-col${c.change1y != null ? (c.change1y >= 0 ? ' up' : ' down') : ''}">${c.change1y != null ? fmtSmartPct(c.change1y) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}">${c.change2y != null ? fmtLargePct(c.change2y) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}">${c.change3y != null ? fmtLargePct(c.change3y) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-4y-col${c.change4y != null ? (c.change4y >= 0 ? ' up' : ' down') : ''}">${c.change4y != null ? fmtLargePct(c.change4y) : '—'}</div>

@@ -1113,7 +1113,7 @@ async function fetchCryptoData() {
         change7d: q.percent_change_7d ?? null,
         change30d: q.percent_change_30d ?? null,
         change200d: q.percent_change_200d ?? null, // Coinpaprika provides this when available
-        change1y: q.percent_change_1y ?? null,
+        change1y: null, // Computed from 730d KuCoin chart data (Coinpaprika's field is unreliable)
         marketCap: q.market_cap,
         volume24h: q.volume_24h,
         rank: c.rank,
