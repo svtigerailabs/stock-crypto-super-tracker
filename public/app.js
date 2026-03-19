@@ -124,7 +124,7 @@ async function _preload6MChange(coins) {
         const p90 = state.cryptoCharts[c.id]['90d'];
         c.change90d = ((p90[p90.length-1] - p90[0]) / p90[0]) * 100;
         const el = document.querySelector(`#lcw-crypto-${c.id} .lcw-90d-col`);
-        if (el) { const d = c.change90d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-90d-col`; el.textContent = `${c.change90d >= 0 ? '+' : ''}${c.change90d.toFixed(2)}%`; }
+        if (el) { const d = c.change90d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-90d-col`; el.textContent = fmtSmartPct(c.change90d); }
       } else {
         try {
           const p90 = await api('GET', `/crypto/${c.id}/chart?range=90d`);
@@ -133,7 +133,7 @@ async function _preload6MChange(coins) {
             state.cryptoCharts[c.id]['90d'] = p90;
             c.change90d = ((p90[p90.length-1] - p90[0]) / p90[0]) * 100;
             const el = document.querySelector(`#lcw-crypto-${c.id} .lcw-90d-col`);
-            if (el) { const d = c.change90d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-90d-col`; el.textContent = `${c.change90d >= 0 ? '+' : ''}${c.change90d.toFixed(2)}%`; }
+            if (el) { const d = c.change90d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-90d-col`; el.textContent = fmtSmartPct(c.change90d); }
           }
         } catch {}
         await new Promise(r => setTimeout(r, 300));
@@ -147,7 +147,7 @@ async function _preload6MChange(coins) {
       if (pctEl) {
         const d = c.change6m >= 0 ? 'up' : 'down';
         pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`;
-        pctEl.textContent = `${c.change6m >= 0 ? '+' : ''}${c.change6m.toFixed(2)}%`;
+        pctEl.textContent = fmtSmartPct(c.change6m);
       }
       continue;
     }
@@ -161,7 +161,7 @@ async function _preload6MChange(coins) {
       if (pctEl) {
         const d = c.change6m >= 0 ? 'up' : 'down';
         pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`;
-        pctEl.textContent = `${c.change6m >= 0 ? '+' : ''}${c.change6m.toFixed(2)}%`;
+        pctEl.textContent = fmtSmartPct(c.change6m);
       }
     } catch {}
     await new Promise(r => setTimeout(r, 400));
@@ -169,7 +169,7 @@ async function _preload6MChange(coins) {
 }
 
 // Helper: compute YTD + 2Y from 730d price array and update DOM in-place
-// Format large % values for 2Y/3Y/5Y/SinceICO — no decimals, K/M above 100K
+// Format large % values — no decimals, K/M/B above 100K
 function fmtLargePct(val) {
   if (val === null || val === undefined) return '—';
   const sign = val >= 0 ? '+' : '';
@@ -178,6 +178,12 @@ function fmtLargePct(val) {
   if (abs >= 1e6) return `${sign}${(val / 1e6).toFixed(0)}M%`;
   if (abs >= 1e5) return `${sign}${(val / 1e3).toFixed(0)}K%`;
   return `${sign}${Math.round(val)}%`;
+}
+// Smart pct formatter: K/M/B for ≥100K%, else 2 decimal places
+function fmtSmartPct(val) {
+  if (val === null || val === undefined) return '—';
+  if (Math.abs(val) >= 1e5) return fmtLargePct(val);
+  return `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
 }
 
 function _computeAndUpdateExtPerf2Y(c, prices) {
@@ -188,7 +194,7 @@ function _computeAndUpdateExtPerf2Y(c, prices) {
   if (prices[ytdIdx] > 0) c.changeYTD = ((prices[prices.length - 1] - prices[ytdIdx]) / prices[ytdIdx]) * 100;
   const ytdEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-ytd-col`);
   const y2El  = document.querySelector(`#lcw-crypto-${c.id} .lcw-2y-col`);
-  if (ytdEl && c.changeYTD != null) { const d = c.changeYTD >= 0 ? 'up' : 'down'; ytdEl.className = `lcw-col lcw-pct ${d} lcw-ytd-col`; ytdEl.textContent = `${c.changeYTD >= 0 ? '+' : ''}${c.changeYTD.toFixed(2)}%`; }
+  if (ytdEl && c.changeYTD != null) { const d = c.changeYTD >= 0 ? 'up' : 'down'; ytdEl.className = `lcw-col lcw-pct ${d} lcw-ytd-col`; ytdEl.textContent = fmtSmartPct(c.changeYTD); }
   if (y2El  && c.change2y  != null) { const d = c.change2y  >= 0 ? 'up' : 'down'; y2El.className  = `lcw-col lcw-pct ${d} lcw-2y-col`;  y2El.textContent  = fmtLargePct(c.change2y);  }
 }
 
@@ -3874,7 +3880,8 @@ function renderCryptoHoverPopup(c, el) {
       ${[['1H', c.change1h], ['24H', c.change24h], ['7D', c.change7d], ['30D', c.change30d], ['YTD', c.changeYtd], ['1Y', c.change1y]].map(([l, v]) => {
         if (v == null) return '';
         const d = v >= 0 ? 'up' : 'down';
-        return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</span></div>`;
+        const txt = Math.abs(v) >= 1e5 ? fmtLargePct(v) : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+        return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${txt}</span></div>`;
       }).join('')}
     </div>
     <div class="hover-popup-periods" id="${popupId}-periods">
@@ -3970,7 +3977,9 @@ function buildCryptoDetailedTable(coins) {
   const fmtPctCell = (val) => {
     if (val === null || val === undefined) return `<div class="lcw-col lcw-pct">—</div>`;
     const d = val >= 0 ? 'up' : 'down';
-    return `<div class="lcw-col lcw-pct ${d}">${val >= 0 ? '+' : ''}${val.toFixed(2)}%</div>`;
+    // Use K/M/B notation for very large percentages (≥100,000%)
+    const txt = Math.abs(val) >= 1e5 ? fmtLargePct(val) : `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
+    return `<div class="lcw-col lcw-pct ${d}">${txt}</div>`;
   };
 
   const rows = coins.map(c => {
@@ -4013,9 +4022,9 @@ function buildCryptoDetailedTable(coins) {
         ${fmtPctCell(c.change24h)}
         ${fmtPctCell(c.change7d)}
         ${fmtPctCell(c.change30d)}
-        <div class="lcw-col lcw-pct lcw-90d-col${c.change90d != null ? (c.change90d >= 0 ? ' up' : ' down') : ''}">${c.change90d != null ? `${c.change90d >= 0 ? '+' : ''}${c.change90d.toFixed(2)}%` : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}">${(c.change6m ?? c.change200d) != null ? `${(c.change6m ?? c.change200d) >= 0 ? '+' : ''}${(c.change6m ?? c.change200d).toFixed(2)}%` : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-ytd-col${c.changeYTD != null ? (c.changeYTD >= 0 ? ' up' : ' down') : ''}">${c.changeYTD != null ? `${c.changeYTD >= 0 ? '+' : ''}${c.changeYTD.toFixed(2)}%` : '—'}</div>
+        <div class="lcw-col lcw-pct lcw-90d-col${c.change90d != null ? (c.change90d >= 0 ? ' up' : ' down') : ''}">${c.change90d != null ? fmtSmartPct(c.change90d) : '—'}</div>
+        <div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}">${(c.change6m ?? c.change200d) != null ? fmtSmartPct(c.change6m ?? c.change200d) : '—'}</div>
+        <div class="lcw-col lcw-pct lcw-ytd-col${c.changeYTD != null ? (c.changeYTD >= 0 ? ' up' : ' down') : ''}">${c.changeYTD != null ? fmtSmartPct(c.changeYTD) : '—'}</div>
         ${fmtPctCell(c.change1y)}
         <div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}">${c.change2y != null ? fmtLargePct(c.change2y) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}">${c.change3y != null ? fmtLargePct(c.change3y) : '—'}</div>
@@ -4194,7 +4203,8 @@ function openCryptoDetailModal(id) {
           ${[['1H',c.change1h],['24H',c.change24h],['7D',c.change7d],['30D',c.change30d],['~6M',c.change200d],['1Y',c.change1y]].map(([l,v])=>{
             if(v==null)return '';
             const d=v>=0?'up':'down';
-            return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${v>=0?'+':''}${v.toFixed(1)}%</span></div>`;
+            const txt=Math.abs(v)>=1e5?fmtLargePct(v):`${v>=0?'+':''}${v.toFixed(1)}%`;
+            return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${txt}</span></div>`;
           }).join('')}
         </div>
         <div class="hover-stats-grid">
@@ -4271,7 +4281,7 @@ async function setCryptoChartPeriod(period) {
           const coinRef = state.cryptoData.find(x => x.id === c.id);
           if (coinRef) coinRef.change6m = change6m;
           const pctEl = document.querySelector(`#lcw-crypto-${c.id} .lcw-6m-col`);
-          if (pctEl) { const d = change6m >= 0 ? 'up' : 'down'; pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`; pctEl.textContent = `${change6m >= 0 ? '+' : ''}${change6m.toFixed(2)}%`; }
+          if (pctEl) { const d = change6m >= 0 ? 'up' : 'down'; pctEl.className = `lcw-col lcw-pct ${d} lcw-6m-col`; pctEl.textContent = fmtSmartPct(change6m); }
         }
         if (state.cryptoChartPeriod !== period) return; // user switched period
         const cell = document.getElementById(`crypto-chart-${c.id}`);

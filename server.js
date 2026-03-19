@@ -1628,6 +1628,24 @@ async function fetchKuCoinPrices(symbol, startAt, endAt, type = '1day') {
   return { prices: json.data.slice().reverse().map(k => parseFloat(k[2])).filter(v => v > 0), firstTs: parseInt(json.data[json.data.length - 1][0]) * 1000 };
 }
 
+// CryptoCompare daily prices — aggregated USD spot data from multiple exchanges
+// More accurate than single-exchange USDT pairs for ROI calculations
+let _ccLastCall = 0;
+async function fetchCryptoCompareDailyPrices(symbol, limit) {
+  // Simple rate limiter: min 250ms between calls to stay under free-tier limits
+  const wait = Math.max(0, 250 - (Date.now() - _ccLastCall));
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _ccLastCall = Date.now();
+  const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&limit=${limit}`;
+  const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`CryptoCompare HTTP ${r.status}`);
+  const json = await r.json();
+  if (json.Response !== 'Success' || !json.Data?.Data?.length) throw new Error(json.Message || 'No CryptoCompare data');
+  const prices = json.Data.Data.filter(d => d.close > 0).map(d => d.close);
+  if (prices.length < 2) throw new Error('Not enough CryptoCompare data');
+  return prices;
+}
+
 const cryptoChartCache = {};
 app.get('/api/crypto/:id/chart', async (req, res) => {
   const { id } = req.params;
@@ -1645,31 +1663,44 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
 
   try {
     let prices = [];
+    const limit = LIMIT_MAP[range];
 
     if (range === '1d') {
-      // Intraday: 1h candles for last 24 hours
+      // Intraday: 1h candles for last 24 hours — KuCoin only
       try {
         const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - 86400, nowTs, '1hour');
         prices = p;
       } catch {}
-    } else {
-      const limit = LIMIT_MAP[range];
-      if (!limit) return res.status(400).json({ error: 'Invalid range' });
-      const startAt = nowTs - limit * 86400;
-
+    } else if (!limit) {
+      return res.status(400).json({ error: 'Invalid range' });
+    } else if (limit >= 365) {
+      // ≥1Y ranges: use CryptoCompare (aggregated USD spot, multi-exchange)
+      // for more accurate ROI calculations, with KuCoin as fallback
       try {
-        if (limit <= 1500) {
-          const { prices: p } = await fetchKuCoinPrices(symbol, startAt, nowTs);
-          prices = p;
-        } else {
-          // 5Y (1825d): two sequential calls to avoid hitting 1500-candle limit
-          const midTs = nowTs - 1500 * 86400;
-          const [{ prices: older }, { prices: recent }] = await Promise.all([
-            fetchKuCoinPrices(symbol, startAt, midTs),
-            fetchKuCoinPrices(symbol, midTs, nowTs),
-          ]);
-          prices = [...older, ...recent];
-        }
+        prices = await fetchCryptoCompareDailyPrices(symbol, limit);
+      } catch {
+        // Fallback to KuCoin if CryptoCompare fails for this coin
+        try {
+          if (limit <= 1500) {
+            const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - limit * 86400, nowTs);
+            prices = p;
+          } else {
+            const midTs = nowTs - 1500 * 86400;
+            const startAt = nowTs - limit * 86400;
+            const [{ prices: older }, { prices: recent }] = await Promise.all([
+              fetchKuCoinPrices(symbol, startAt, midTs),
+              fetchKuCoinPrices(symbol, midTs, nowTs),
+            ]);
+            prices = [...older, ...recent];
+          }
+        } catch {}
+      }
+    } else {
+      // Short ranges (<1Y): KuCoin is fine (small USDT/USD difference)
+      const startAt = nowTs - limit * 86400;
+      try {
+        const { prices: p } = await fetchKuCoinPrices(symbol, startAt, nowTs);
+        prices = p;
       } catch {}
     }
 
@@ -1680,6 +1711,50 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
 });
 
 // ─── CRYPTO INCEPTION (Since ICO) ────────────────────────────────────────────
+// Coinpaprika coin detail cache (inception dates never change — cache permanently)
+const coinDetailCache = {};
+async function fetchCoinInceptionDate(coinId) {
+  if (coinDetailCache[coinId]) return coinDetailCache[coinId];
+  try {
+    const res = await fetch(`https://api.coinpaprika.com/v1/coins/${coinId}`, {
+      headers: { Accept: 'application/json', 'User-Agent': 'StockCryptoSuperTracker/1.0' },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) throw new Error(`Coinpaprika coin detail HTTP ${res.status}`);
+    const data = await res.json();
+    const result = { startedAt: data.started_at || null, firstDataAt: data.first_data_at || null };
+    coinDetailCache[coinId] = result;
+    return result;
+  } catch (e) {
+    console.error(`Coinpaprika detail error for ${coinId}:`, e.message);
+    return null;
+  }
+}
+
+// CryptoCompare full history for Since-ICO ROI (has data back to 2010 for BTC)
+async function fetchCryptoCompareFullHistory(symbol) {
+  // Reuse the same rate limiter as fetchCryptoCompareDailyPrices
+  const wait = Math.max(0, 250 - (Date.now() - _ccLastCall));
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _ccLastCall = Date.now();
+  const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${symbol}&tsym=USD&allData=true`;
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!res.ok) throw new Error(`CryptoCompare HTTP ${res.status}`);
+  const json = await res.json();
+  if (json.Response !== 'Success' || !json.Data?.Data?.length) throw new Error(json.Message || 'No CryptoCompare data');
+  // Filter out entries with zero/missing close prices
+  const valid = json.Data.Data.filter(d => d.close > 0);
+  if (valid.length < 2) throw new Error('Not enough valid CryptoCompare data');
+  return {
+    firstPrice: valid[0].close,
+    lastPrice: valid[valid.length - 1].close,
+    firstTs: valid[0].time * 1000
+  };
+}
+
 const cryptoInceptionCache = {};
 app.get('/api/crypto/:id/inception', async (req, res) => {
   const { id } = req.params;
@@ -1689,13 +1764,49 @@ app.get('/api/crypto/:id/inception', async (req, res) => {
   const nowTs = Math.floor(Date.now() / 1000);
 
   try {
-    // KuCoin weekly candles from Jan 2010 — 1500 weeks covers ~29 years (full crypto history)
-    const CRYPTO_GENESIS = 1262304000; // 2010-01-01 in seconds
-    const { prices, firstTs } = await fetchKuCoinPrices(symbol, CRYPTO_GENESIS, nowTs, '1week');
-    if (prices.length < 2) throw new Error('Not enough data');
-    const change = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
-    const d = new Date(firstTs);
-    const listedDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    // 1. Get the REAL inception date from Coinpaprika coin detail
+    let listedDate = '';
+    try {
+      const detail = await fetchCoinInceptionDate(id);
+      if (detail) {
+        const dateStr = detail.startedAt || detail.firstDataAt;
+        if (dateStr) {
+          const d = new Date(dateStr);
+          if (!isNaN(d.getTime())) {
+            listedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          }
+        }
+      }
+    } catch (e) { console.error(`Inception date error for ${id}:`, e.message); }
+
+    // 2. Calculate Since-ICO ROI — try CryptoCompare first (data back to 2010),
+    //    then fall back to KuCoin (data from ~2017)
+    let change = null;
+
+    // Primary: CryptoCompare (longest available price history)
+    try {
+      const { firstPrice, lastPrice } = await fetchCryptoCompareFullHistory(symbol);
+      if (firstPrice > 0) {
+        change = ((lastPrice - firstPrice) / firstPrice) * 100;
+      }
+    } catch (e) { console.log(`CryptoCompare inception fallback for ${symbol}:`, e.message); }
+
+    // Fallback: KuCoin weekly candles from 2010
+    if (change === null) {
+      try {
+        const CRYPTO_GENESIS = 1262304000; // 2010-01-01 in seconds
+        const { prices, firstTs } = await fetchKuCoinPrices(symbol, CRYPTO_GENESIS, nowTs, '1week');
+        if (prices.length >= 2) {
+          change = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+          // If Coinpaprika didn't provide a date, use KuCoin's first data as last resort
+          if (!listedDate) {
+            const d = new Date(firstTs);
+            listedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          }
+        }
+      } catch {}
+    }
+
     const result = { change, listedDate };
     cryptoInceptionCache[id] = { data: result, at: Date.now() };
     res.json(result);
