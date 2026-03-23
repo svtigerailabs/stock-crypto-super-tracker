@@ -3600,6 +3600,11 @@ async function loadDashboardNews() {
   // If already loaded with content, don't re-fetch (refresh via interval)
   if (dashNewsLoaded && _dashNewsCache.length && container.innerHTML) return;
 
+  // Show loading state immediately if container is empty (prevents blank area on cold start)
+  if (!container.innerHTML || !container.innerHTML.trim()) {
+    container.innerHTML = `<div class="dashboard-news-header"><h3>Latest Market News</h3></div><div style="padding:16px;color:var(--text-dim);font-size:13px">Loading headlines… please wait a moment.</div>`;
+  }
+
   try {
     // Try primary endpoint first
     let items = [];
@@ -3636,8 +3641,8 @@ async function loadDashboardNews() {
     const renderItems = _dashNewsCache.length ? _dashNewsCache : items;
     if (!renderItems.length) {
       container.innerHTML = `<div class="dashboard-news-header"><h3>Latest Market News</h3></div><div style="padding:16px;color:var(--text-dim);font-size:13px">Loading headlines… please wait a moment.</div>`;
-      // Retry in 5 seconds if empty (faster recovery from cold start)
-      setTimeout(() => { dashNewsLoaded = false; loadDashboardNews(); }, 5000);
+      // Retry in 3 seconds (fast recovery from cold start)
+      setTimeout(() => { dashNewsLoaded = false; loadDashboardNews(); }, 3000);
       return;
     }
 
@@ -3668,8 +3673,8 @@ async function loadDashboardNews() {
       dashNewsLoaded = true;
       loadDashboardNews();
     } else {
-      // No cache, retry in 5 seconds
-      setTimeout(() => { dashNewsLoaded = false; loadDashboardNews(); }, 5000);
+      container.innerHTML = `<div class="dashboard-news-header"><h3>Latest Market News</h3></div><div style="padding:16px;color:var(--text-dim);font-size:13px">Loading headlines… please wait a moment.</div>`;
+      setTimeout(() => { dashNewsLoaded = false; loadDashboardNews(); }, 3000);
     }
   }
 }
