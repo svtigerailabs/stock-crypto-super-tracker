@@ -2337,47 +2337,7 @@ a.nl-title:hover, a.nl-title:focus { color: #58a6ff; text-decoration: none; }
   white-space: normal; word-break: break-word; line-height: 1.5;
 }
 
-/* ── News hover preview popup ── */
-.news-preview-popup {
-  position: fixed; z-index: 10000; display: none;
-  width: 560px; max-height: 500px;
-  background: var(--surface, #161b22); border: 1px solid var(--blue-dim, #1f6feb44);
-  border-radius: 10px; box-shadow: 0 16px 56px rgba(0,0,0,.7);
-  overflow: hidden;
-}
-.news-preview-popup.visible { display: flex; flex-direction: column; }
-.news-preview-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 14px 8px; border-bottom: 1px solid var(--border, #333);
-}
-.news-preview-meta { display: flex; align-items: center; gap: 8px; }
-.news-preview-source {
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
-  padding: 1px 6px; border-radius: 3px;
-  background: rgba(88,166,255,.15); color: var(--accent, #58a6ff);
-}
-.news-preview-date { font-size: 11px; color: var(--text-dim, #8b949e); }
-.news-preview-open {
-  font-size: 11px; color: var(--accent, #58a6ff); text-decoration: none;
-  white-space: nowrap;
-}
-.news-preview-open:hover { text-decoration: underline; }
-.news-preview-title {
-  padding: 8px 14px; font-size: 13px; font-weight: 600;
-  color: var(--text, #e6edf3); line-height: 1.4;
-  border-bottom: 1px solid var(--border, #333);
-}
-.news-preview-iframe-wrap { flex: 1; position: relative; min-height: 350px; }
-.news-preview-iframe {
-  width: 100%; height: 100%; border: none;
-  position: absolute; top: 0; left: 0;
-  background: #fff;
-}
-.news-preview-iframe-fallback {
-  display: none; flex-direction: column; align-items: center; justify-content: center;
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  background: var(--surface, #161b22);
-}
+/* News preview popup removed — most news sites block iframe embedding */
 
 /* ── Why Moving badge ── */
 .why-moving-badge { min-height: 0; }

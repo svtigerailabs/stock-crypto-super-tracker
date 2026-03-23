@@ -3186,8 +3186,7 @@ function _mpBuildArticleHtml(articles) {
     return `<li class="mp-article-item">
       <span class="mp-article-num">${i + 1}</span>
       ${src ? `<span class="mp-article-src">${src}</span>` : ''}
-      <a class="mp-article-link" href="${link}" target="_blank" rel="noopener"
-         data-preview="1" data-url="${link}" data-title="${title}" data-source="${src}" data-date="${escHtml(fullDate)}">${title}</a>
+      <a class="mp-article-link" href="${link}" target="_blank" rel="noopener">${title}</a>
       ${timeAgo ? `<span class="mp-article-time">${escHtml(timeAgo)}</span>` : ''}
     </li>`;
   }).join('');
@@ -3446,7 +3445,7 @@ function renderCryptoNewsViewList() {
       ? `<span class="nl-src" style="background:rgba(200,200,200,.1);color:#ccc">𝕏 ${escHtml(a.source.replace('X @', '@'))}</span>`
       : `<span class="nl-src">${escHtml(a.source || 'News')}</span>`;
     return `<div class="nl-item">
-      ${srcLabel}${freshDot}<a class="nl-title" href="${escHtml(a.link)}" target="_blank" rel="noopener" data-preview="1" data-url="${escHtml(a.link)}" data-title="${escHtml(a.title)}" data-source="${escHtml(a.source || 'News')}" data-date="${escHtml(timeStr)}">${escHtml(a.title)}</a>
+      ${srcLabel}${freshDot}<a class="nl-title" href="${escHtml(a.link)}" target="_blank" rel="noopener">${escHtml(a.title)}</a>
       <span class="nl-time">${timeStr}</span>
     </div>`;
   }).join('');
@@ -3477,81 +3476,7 @@ function removeNewsCustomSymbol(sym) {
 }
 
 /* ─── NEWS HOVER PREVIEW POPUP ────────────────────────────────── */
-let _newsPreviewTimer = null;
-let _newsPreviewVisible = false;
-
-function showNewsPreview(event, url, title, source, dateStr) {
-  clearTimeout(_newsPreviewTimer);
-  let popup = document.getElementById('news-preview-popup');
-  if (!popup) {
-    popup = document.createElement('div');
-    popup.id = 'news-preview-popup';
-    popup.className = 'news-preview-popup';
-    popup.onmouseenter = () => { clearTimeout(_newsPreviewTimer); _newsPreviewVisible = true; };
-    popup.onmouseleave = () => hideNewsPreview();
-    document.body.appendChild(popup);
-  }
-  _newsPreviewVisible = true;
-  const safeUrl = escHtml(url);
-  const safeTitle = escHtml(title);
-  const safeSrc = escHtml(source);
-  popup.innerHTML = `
-    <div class="news-preview-header">
-      <div class="news-preview-meta">
-        <span class="news-preview-source">${safeSrc}</span>
-        <span class="news-preview-date">${escHtml(dateStr)}</span>
-      </div>
-      <a class="news-preview-open" href="${safeUrl}" target="_blank" rel="noopener">Open in new tab ↗</a>
-    </div>
-    <div class="news-preview-title">${safeTitle}</div>
-    <div class="news-preview-iframe-wrap">
-      <iframe src="${safeUrl}" class="news-preview-iframe" sandbox="allow-same-origin allow-scripts" loading="lazy"></iframe>
-      <div class="news-preview-iframe-fallback">
-        <div style="font-size:13px;color:var(--text-dim);margin-bottom:10px">Preview unavailable — this site blocks embedding.</div>
-        <a href="${safeUrl}" target="_blank" rel="noopener" class="btn-primary" style="font-size:12px;padding:6px 16px;text-decoration:none">Read Full Article ↗</a>
-      </div>
-    </div>`;
-  // Position popup
-  const rect = event.target.getBoundingClientRect();
-  const popW = 560, popH = 480;
-  let left = Math.min(rect.left, window.innerWidth - popW - 20);
-  let top = rect.bottom + 6;
-  if (top + popH > window.innerHeight) top = Math.max(10, rect.top - popH - 6);
-  popup.style.left = left + 'px';
-  popup.style.top = top + 'px';
-  popup.classList.add('visible');
-
-  // Detect iframe load failure (X-Frame-Options)
-  const iframe = popup.querySelector('.news-preview-iframe');
-  const fallback = popup.querySelector('.news-preview-iframe-fallback');
-  if (iframe && fallback) {
-    iframe.onerror = () => { iframe.style.display = 'none'; fallback.style.display = 'flex'; };
-    setTimeout(() => {
-      try { if (!iframe.contentDocument?.body?.innerHTML) { iframe.style.display = 'none'; fallback.style.display = 'flex'; } }
-      catch { iframe.style.display = 'none'; fallback.style.display = 'flex'; }
-    }, 3000);
-  }
-}
-
-function hideNewsPreview() {
-  _newsPreviewTimer = setTimeout(() => {
-    _newsPreviewVisible = false;
-    const popup = document.getElementById('news-preview-popup');
-    if (popup) popup.classList.remove('visible');
-  }, 300);
-}
-
-// Delegated hover listener for all news links with data-preview attribute
-document.addEventListener('mouseenter', e => {
-  const link = e.target.closest('.nl-title[data-preview], .mp-article-link[data-preview], .dash-news-title a[data-preview]');
-  if (link) {
-    showNewsPreview(e, link.dataset.url || link.href, link.dataset.title || link.textContent, link.dataset.source || '', link.dataset.date || '');
-  }
-}, true);
-document.addEventListener('mouseleave', e => {
-  const link = e.target.closest('.nl-title[data-preview], .mp-article-link[data-preview], .dash-news-title a[data-preview]');
-  if (link) hideNewsPreview();
-}, true);
+/* News preview popup removed — most news sites block iframe embedding (X-Frame-Options) */
 
 function renderNewsCustSymbols() {
   const el = document.getElementById('news-cust-sym-list');
@@ -3647,7 +3572,7 @@ function renderNewsItems() {
 
     return `<div class="nl-item${breaking ? ' nl-breaking' : portfolio ? ' nl-portfolio' : ''}">
       <span class="nl-src ${srcClass}">${escHtml(srcDisplay)}</span>${freshDot}${n.relatedSymbol ? `<button class="news-sym-pill" onclick="showNewsModal('${escHtml(n.relatedSymbol)}')">${escHtml(n.relatedSymbol)}</button>` : ''}
-      <a class="nl-title" href="${escHtml(n.link)}" target="_blank" rel="noopener" data-preview="1" data-url="${escHtml(n.link)}" data-title="${escHtml(n.title)}" data-source="${escHtml(src)}" data-date="${escHtml(timeStr)}" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${catsAttr})">${escHtml(n.title)}</a>
+      <a class="nl-title" href="${escHtml(n.link)}" target="_blank" rel="noopener" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${catsAttr})">${escHtml(n.title)}</a>
       <span class="nl-time">${timeStr}</span>
     </div>`;
   }).join('');
@@ -4168,7 +4093,7 @@ function buildCryptoDetailedTable(coins) {
     return `<div class="lcw-col lcw-pct${extraCls ? ' ' + extraCls : ''}${dir ? ' ' + dir : ''}" data-col="${id}">${html}</div>`;
   };
 
-  const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M'],['180d','6M'],['ytd','YTD'],['365d','1Y'],['730d','2Y']].map(([p, label]) =>
+  const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M']].map(([p, label]) =>
     `<button class="chart-period-btn${p === period ? ' active' : ''}" data-period="${p}" onclick="event.stopPropagation();setCryptoChartPeriod('${p}')">${label}</button>`
   ).join('');
 
