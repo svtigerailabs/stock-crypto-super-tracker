@@ -50,8 +50,19 @@ async function init() {
 
 
 
-  // Refresh dashboard news every 5 minutes
-  setTimeout(loadDashboardNews, 4000);
+  // Aggressive news loading: retry every 3s until news appears, then refresh every 5min
+  let _newsBootRetries = 0;
+  const _newsBootInterval = setInterval(() => {
+    const el = document.getElementById('dashboard-news');
+    if (el && el.innerHTML && !el.innerHTML.includes('Loading headlines') && _dashNewsCache.length) {
+      clearInterval(_newsBootInterval);
+      return;
+    }
+    _newsBootRetries++;
+    if (_newsBootRetries > 20) { clearInterval(_newsBootInterval); return; } // give up after 60s
+    dashNewsLoaded = false;
+    loadDashboardNews();
+  }, 3000);
   setInterval(() => { dashNewsLoaded = false; loadDashboardNews(); }, 5 * 60 * 1000);
 
   // Pre-load crypto news so it's ready when user opens Crypto Dashboard
@@ -4054,7 +4065,7 @@ const CRYPTO_COL_DEFS = [
   { id: '3y',    hdr: '3Y',      cls: 'lcw-pct',         w: '64px'  },
   { id: '4y',    hdr: '4Y',      cls: 'lcw-pct',         w: '64px'  },
   { id: '5y',    hdr: '5Y',      cls: 'lcw-pct',         w: '64px'  },
-  { id: 'chart', hdr: '__CHART__', cls: 'lcw-chart',     w: '130px' },
+  { id: 'chart', hdr: '__CHART__', cls: 'lcw-chart',     w: '155px' },
   { id: 'mcap',  hdr: 'Mkt Cap', cls: 'lcw-mcap',        w: '80px'  },
   { id: 'vol',   hdr: 'Volume',  cls: 'lcw-vol',         w: '68px'  },
 ];
