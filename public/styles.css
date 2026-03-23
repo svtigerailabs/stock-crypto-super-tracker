@@ -1075,10 +1075,10 @@ html, body {
 /* Stock table: #, stock, price, 1D-10Y (10 pct cols), SinceIPO, Listed, cap, vol, chart */
 .lcw-stock { min-width: 1240px; }
 
-/* Crypto table: #, ★icon, coin, price, ATH, ↑ATH, 1H-1Y(8), 2Y, 3Y, 4Y, 5Y, cap, vol, chart */
+/* Crypto table: dynamic column order via --crypto-grid CSS variable */
 .lcw-header {
   display: grid;
-  grid-template-columns: 28px 32px 80px 76px 84px 50px repeat(8, 54px) 64px 64px 64px 64px 80px 68px 130px;
+  grid-template-columns: var(--crypto-grid, 28px 32px 80px 76px 84px 54px repeat(8, 54px) 64px 64px 64px 64px 130px 80px 68px);
   gap: 0; padding: 8px 10px; font-size: 10px; font-weight: 800;
   color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px;
   background: var(--card); border-bottom: 2px solid var(--border);
@@ -1090,7 +1090,7 @@ html, body {
 
 .lcw-row {
   display: grid;
-  grid-template-columns: 28px 32px 80px 76px 84px 50px repeat(8, 54px) 64px 64px 64px 64px 80px 68px 130px;
+  grid-template-columns: var(--crypto-grid, 28px 32px 80px 76px 84px 54px repeat(8, 54px) 64px 64px 64px 64px 130px 80px 68px);
   gap: 0; padding: 6px 10px; align-items: center;
   border-bottom: 1px solid #1c2128; background: var(--surface);
   font-size: 12px; transition: background .1s; cursor: pointer;
@@ -1115,6 +1115,11 @@ html, body {
 .lcw-pct { text-align: right; font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
 .lcw-pct.up { color: var(--green); }
 .lcw-pct.down { color: var(--red); }
+/* Column drag-and-drop reordering */
+.col-draggable { cursor: grab; }
+.col-draggable:hover { background: rgba(88,166,255,.08); border-radius: 4px; }
+.col-dragging { opacity: 0.4; background: var(--blue-dim) !important; }
+.col-drag-over { background: rgba(88,166,255,.15) !important; border-radius: 4px; box-shadow: inset 0 0 0 2px var(--blue); }
 .lcw-loading { color: var(--text-dim); }
 .lcw-chart { text-align: center; padding: 0 2px; }
 .lcw-chart svg { display: block; width: 100%; height: 40px; }

@@ -1101,7 +1101,8 @@ async function fetchCryptoData() {
     const data = await res.json();
     const result = data.map(c => {
       const q = c.quotes?.USD || {};
-      const athPct = (q.price && q.ath_price) ? ((q.price - q.ath_price) / q.ath_price * 100) : null;
+      // "To ATH" = % gain needed to reach ATH from current price
+      const athPct = (q.price && q.ath_price && q.price < q.ath_price) ? ((q.ath_price - q.price) / q.price * 100) : (q.price && q.ath_price ? 0 : null);
       return {
         id: c.id,
         symbol: c.symbol.toUpperCase(),

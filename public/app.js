@@ -3805,6 +3805,7 @@ async function renderCryptoDashboard() {
   if (mode === 'detailed') {
     grid.className = 'stocks-list';
     grid.innerHTML = buildCryptoDetailedTable(visibleCoins);
+    _initCryptoColDrag(); // enable column drag-and-drop
     if (newsSection) newsSection.style.display = 'none';
     // Load charts immediately for visible period (shows cached, fetches missing)
     setTimeout(() => setCryptoChartPeriod(state.cryptoChartPeriod), 50);
@@ -4027,7 +4028,7 @@ function renderCryptoHoverPopup(c, el) {
       <div class="hover-stat"><span class="hover-stat-label">Market Cap</span><span class="hover-stat-value">${mcap}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">Volume 24H</span><span class="hover-stat-value">${vol}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">ATH</span><span class="hover-stat-value">${cryptoPriceFmt(c.ath)}</span></div>
-      <div class="hover-stat"><span class="hover-stat-label">ATH Change</span><span class="hover-stat-value" style="color:var(--red)">${c.athChangePercent != null ? c.athChangePercent.toFixed(1) + '%' : '—'}</span></div>
+      <div class="hover-stat"><span class="hover-stat-label">To ATH</span><span class="hover-stat-value" style="color:var(--orange,#e3b341)">${(c.price && c.ath) ? (c.price >= c.ath ? 'AT ATH' : '+' + ((c.ath - c.price) / c.price * 100).toFixed(1) + '%') : '—'}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">24H High</span><span class="hover-stat-value">${cryptoPriceFmt(c.high24h)}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">24H Low</span><span class="hover-stat-value">${cryptoPriceFmt(c.low24h)}</span></div>
     </div>`;
@@ -4108,105 +4109,190 @@ function cryptoPriceFmt(price) {
   return `$${price.toPrecision(4)}`;
 }
 
+/* ─── CRYPTO COLUMN CONFIG & DRAG-REORDER ────────────────────── */
+const CRYPTO_COL_DEFS = [
+  { id: 'rank',  hdr: '#',       cls: 'lcw-rank',        w: '28px'  },
+  { id: 'icon',  hdr: '',        cls: 'lcw-crypto-icon', w: '32px'  },
+  { id: 'coin',  hdr: 'Coin',    cls: 'lcw-coin',        w: '80px'  },
+  { id: 'price', hdr: 'Price',   cls: 'lcw-price',       w: '76px'  },
+  { id: 'ath',   hdr: 'ATH',     cls: 'lcw-ath',         w: '84px'  },
+  { id: 'toath', hdr: 'To ATH',  cls: 'lcw-pct',         w: '54px'  },
+  { id: '1h',    hdr: '1H',      cls: 'lcw-pct',         w: '54px'  },
+  { id: '24h',   hdr: '24H',     cls: 'lcw-pct',         w: '54px'  },
+  { id: '7d',    hdr: '7D',      cls: 'lcw-pct',         w: '54px'  },
+  { id: '30d',   hdr: '30D',     cls: 'lcw-pct',         w: '54px'  },
+  { id: '90d',   hdr: '90D',     cls: 'lcw-pct',         w: '54px'  },
+  { id: '6m',    hdr: '6M',      cls: 'lcw-pct',         w: '54px'  },
+  { id: 'ytd',   hdr: 'YTD',     cls: 'lcw-pct',         w: '54px'  },
+  { id: '1y',    hdr: '1Y',      cls: 'lcw-pct',         w: '54px'  },
+  { id: '2y',    hdr: '2Y',      cls: 'lcw-pct',         w: '64px'  },
+  { id: '3y',    hdr: '3Y',      cls: 'lcw-pct',         w: '64px'  },
+  { id: '4y',    hdr: '4Y',      cls: 'lcw-pct',         w: '64px'  },
+  { id: '5y',    hdr: '5Y',      cls: 'lcw-pct',         w: '64px'  },
+  { id: 'chart', hdr: '__CHART__', cls: 'lcw-chart',     w: '130px' },
+  { id: 'mcap',  hdr: 'Mkt Cap', cls: 'lcw-mcap',        w: '80px'  },
+  { id: 'vol',   hdr: 'Volume',  cls: 'lcw-vol',         w: '68px'  },
+];
+const CRYPTO_COL_DEFAULT_ORDER = CRYPTO_COL_DEFS.map(c => c.id);
+
+function getCryptoColOrder() {
+  try {
+    const saved = localStorage.getItem('cryptoColOrder');
+    if (saved) {
+      const arr = JSON.parse(saved);
+      // Validate: must contain all current column ids
+      const valid = CRYPTO_COL_DEFAULT_ORDER.every(id => arr.includes(id));
+      if (valid && arr.length === CRYPTO_COL_DEFAULT_ORDER.length) return arr;
+    }
+  } catch(e) {}
+  return [...CRYPTO_COL_DEFAULT_ORDER];
+}
+function saveCryptoColOrder(order) {
+  localStorage.setItem('cryptoColOrder', JSON.stringify(order));
+}
+function _colDef(id) { return CRYPTO_COL_DEFS.find(c => c.id === id); }
+
 /* ─── CRYPTO DETAILED TABLE (livecoinwatch style) ────────────── */
 function buildCryptoDetailedTable(coins) {
   const period = state.cryptoChartPeriod || '1d';
-  const fmtPctCell = (val) => {
-    if (val === null || val === undefined) return `<div class="lcw-col lcw-pct">—</div>`;
+  const colOrder = getCryptoColOrder();
+  const fmtPctVal = (val, large) => {
+    if (val === null || val === undefined) return { html: '—', dir: '' };
     const d = val >= 0 ? 'up' : 'down';
-    // Use K/M/B notation for very large percentages (≥100,000%)
-    const txt = Math.abs(val) >= 1e5 ? fmtLargePct(val) : `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
-    return `<div class="lcw-col lcw-pct ${d}">${txt}</div>`;
+    const txt = large ? fmtLargePct(val)
+      : (Math.abs(val) >= 1e5 ? fmtLargePct(val) : `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`);
+    return { html: txt, dir: d };
   };
+  const pctCell = (id, val, large, extraCls) => {
+    const { html, dir } = fmtPctVal(val, large);
+    return `<div class="lcw-col lcw-pct${extraCls ? ' ' + extraCls : ''}${dir ? ' ' + dir : ''}" data-col="${id}">${html}</div>`;
+  };
+
+  const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M'],['180d','6M'],['ytd','YTD'],['365d','1Y'],['730d','2Y']].map(([p, label]) =>
+    `<button class="chart-period-btn${p === period ? ' active' : ''}" data-period="${p}" onclick="event.stopPropagation();setCryptoChartPeriod('${p}')">${label}</button>`
+  ).join('');
 
   const rows = coins.map(c => {
     const priceStr = cryptoPriceFmt(c.price);
     const mcap = c.marketCap ? fmtVol(c.marketCap) : '—';
     const vol = c.volume24h ? fmtVol(c.volume24h) : '—';
     const athStr = c.ath ? cryptoPriceFmt(c.ath) : '—';
-    const athPct = c.athChangePercent != null ? c.athChangePercent.toFixed(1) + '%' : '—';
-    const athDir = (c.athChangePercent || 0) >= 0 ? 'up' : 'down';
-    // Use cached chart data for the current period; fall back to coinpaprika sparkline
+    // "To ATH" = % gain needed from current price to reach ATH — computed client-side
+    const toAthVal = (c.price && c.ath && c.price < c.ath) ? ((c.ath - c.price) / c.price * 100) : (c.price && c.ath ? 0 : null);
+    const toAthTxt = toAthVal != null ? (toAthVal === 0 ? 'AT ATH' : '+' + (toAthVal >= 1e5 ? fmtLargePct(toAthVal).replace(/[+-]/g,'') : toAthVal.toFixed(1) + '%')) : '—';
+    const toAthCls = toAthVal != null ? (toAthVal === 0 ? 'up' : (toAthVal <= 20 ? 'up' : '')) : '';
     const chartData = state.cryptoCharts?.[c.id]?.[period]?.length
-      ? state.cryptoCharts[c.id][period]
-      : (c.sparkline || []);
+      ? state.cryptoCharts[c.id][period] : (c.sparkline || []);
     const spark = chartData.length > 50 ? chartData.filter((_, i) => i % Math.ceil(chartData.length / 50) === 0) : chartData;
     const sparkSvg = buildSparklineSVG(spark, 130, 32, '#77DD77', '#FF6B6B');
-    // Popup container
     const popup = `<div class="crypto-hover-popup" id="crypto-tbl-hover-${c.id}"></div>`;
-
     const isFav = state.favoriteCryptoIds?.includes(c.id);
+
+    // Build cells keyed by column id
+    const cells = {
+      rank:  `<div class="lcw-col lcw-rank" data-col="rank">${c.rank || ''}</div>`,
+      icon:  `<div class="lcw-col lcw-crypto-icon" data-col="icon" style="position:relative"><button class="crypto-star-btn${isFav ? ' starred' : ''}" data-id="${c.id}" onclick="event.stopPropagation();toggleCryptoFavorite('${c.id}')" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}">☆</button><img class="crypto-icon" src="${c.image}" alt="${c.symbol}" onerror="this.style.display='none'" /></div>`,
+      coin:  `<div class="lcw-col lcw-coin" data-col="coin"><span class="lcw-symbol">${c.symbol}</span><span class="lcw-name">${c.name}</span></div>`,
+      price: `<div class="lcw-col lcw-price" data-col="price">${priceStr}</div>`,
+      ath:   `<div class="lcw-col lcw-ath" data-col="ath">${athStr}</div>`,
+      toath: `<div class="lcw-col lcw-pct ${toAthCls}" data-col="toath" style="color:var(--orange,#e3b341)">${toAthTxt}</div>`,
+      '1h':  pctCell('1h', c.change1h),
+      '24h': pctCell('24h', c.change24h),
+      '7d':  pctCell('7d', c.change7d),
+      '30d': `<div class="lcw-col lcw-pct lcw-30d-col${c.change30d != null && c.change30d !== 0 ? (c.change30d >= 0 ? ' up' : ' down') : ''}" data-col="30d">${c.change30d != null && c.change30d !== 0 ? fmtSmartPct(c.change30d) : '—'}</div>`,
+      '90d': `<div class="lcw-col lcw-pct lcw-90d-col${c.change90d != null ? (c.change90d >= 0 ? ' up' : ' down') : ''}" data-col="90d">${c.change90d != null ? fmtSmartPct(c.change90d) : '—'}</div>`,
+      '6m':  `<div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}" data-col="6m">${(c.change6m ?? c.change200d) != null ? fmtSmartPct(c.change6m ?? c.change200d) : '—'}</div>`,
+      ytd:   `<div class="lcw-col lcw-pct lcw-ytd-col${c.changeYTD != null ? (c.changeYTD >= 0 ? ' up' : ' down') : ''}" data-col="ytd">${c.changeYTD != null ? fmtSmartPct(c.changeYTD) : '—'}</div>`,
+      '1y':  `<div class="lcw-col lcw-pct lcw-1y-col${c.change1y != null ? (c.change1y >= 0 ? ' up' : ' down') : ''}" data-col="1y">${c.change1y != null ? fmtSmartPct(c.change1y) : '—'}</div>`,
+      '2y':  `<div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}" data-col="2y">${c.change2y != null ? fmtLargePct(c.change2y) : '—'}</div>`,
+      '3y':  `<div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}" data-col="3y">${c.change3y != null ? fmtLargePct(c.change3y) : '—'}</div>`,
+      '4y':  `<div class="lcw-col lcw-pct lcw-4y-col${c.change4y != null ? (c.change4y >= 0 ? ' up' : ' down') : ''}" data-col="4y">${c.change4y != null ? fmtLargePct(c.change4y) : '—'}</div>`,
+      '5y':  `<div class="lcw-col lcw-pct lcw-5y-col${c.change5y != null ? (c.change5y >= 0 ? ' up' : ' down') : ''}" data-col="5y">${c.change5y != null ? fmtLargePct(c.change5y) : '—'}</div>`,
+      chart: `<div class="lcw-col lcw-chart" data-col="chart" id="crypto-chart-${c.id}">${sparkSvg}</div>`,
+      mcap:  `<div class="lcw-col lcw-mcap" data-col="mcap">${mcap}</div>`,
+      vol:   `<div class="lcw-col lcw-vol" data-col="vol">${vol}</div>`,
+    };
+
+    const orderedCells = colOrder.map(id => cells[id]).join('');
     return `
       <div class="lcw-row" id="lcw-crypto-${c.id}"
            onmouseenter="_scheduleShow(this,()=>showCryptoTableHover('${c.id}',this),300)"
            onmouseleave="_scheduleHide(this,()=>hideCryptoTableHover(this))"
            onclick="openCryptoDetailModal('${c.id}')">
-        <div class="lcw-col lcw-rank">${c.rank || ''}</div>
-        <div class="lcw-col lcw-crypto-icon" style="position:relative">
-          <button class="crypto-star-btn${isFav ? ' starred' : ''}" data-id="${c.id}"
-            onclick="event.stopPropagation();toggleCryptoFavorite('${c.id}')"
-            title="${isFav ? 'Remove from favorites' : 'Add to favorites'}">☆</button>
-          <img class="crypto-icon" src="${c.image}" alt="${c.symbol}" onerror="this.style.display='none'" />
-        </div>
-        <div class="lcw-col lcw-coin">
-          <span class="lcw-symbol">${c.symbol}</span>
-          <span class="lcw-name">${c.name}</span>
-        </div>
-        <div class="lcw-col lcw-price">${priceStr}</div>
-        <div class="lcw-col lcw-ath">${athStr}</div>
-        <div class="lcw-col lcw-pct ${athDir}">${athPct}</div>
-        ${fmtPctCell(c.change1h)}
-        ${fmtPctCell(c.change24h)}
-        ${fmtPctCell(c.change7d)}
-        <div class="lcw-col lcw-pct lcw-30d-col${c.change30d != null && c.change30d !== 0 ? (c.change30d >= 0 ? ' up' : ' down') : ''}">${c.change30d != null && c.change30d !== 0 ? fmtSmartPct(c.change30d) : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-90d-col${c.change90d != null ? (c.change90d >= 0 ? ' up' : ' down') : ''}">${c.change90d != null ? fmtSmartPct(c.change90d) : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}">${(c.change6m ?? c.change200d) != null ? fmtSmartPct(c.change6m ?? c.change200d) : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-ytd-col${c.changeYTD != null ? (c.changeYTD >= 0 ? ' up' : ' down') : ''}">${c.changeYTD != null ? fmtSmartPct(c.changeYTD) : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-1y-col${c.change1y != null ? (c.change1y >= 0 ? ' up' : ' down') : ''}">${c.change1y != null ? fmtSmartPct(c.change1y) : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-2y-col${c.change2y != null ? (c.change2y >= 0 ? ' up' : ' down') : ''}">${c.change2y != null ? fmtLargePct(c.change2y) : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-3y-col${c.change3y != null ? (c.change3y >= 0 ? ' up' : ' down') : ''}">${c.change3y != null ? fmtLargePct(c.change3y) : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-4y-col${c.change4y != null ? (c.change4y >= 0 ? ' up' : ' down') : ''}">${c.change4y != null ? fmtLargePct(c.change4y) : '—'}</div>
-        <div class="lcw-col lcw-pct lcw-5y-col${c.change5y != null ? (c.change5y >= 0 ? ' up' : ' down') : ''}">${c.change5y != null ? fmtLargePct(c.change5y) : '—'}</div>
-        <div class="lcw-col lcw-mcap">${mcap}</div>
-        <div class="lcw-col lcw-vol">${vol}</div>
-        <div class="lcw-col lcw-chart" id="crypto-chart-${c.id}">${sparkSvg}</div>
+        ${orderedCells}
         ${popup}
       </div>`;
   }).join('');
 
-  const periodBtns = [['1d','1D'],['7d','7D'],['30d','1M'],['90d','3M'],['180d','6M'],['ytd','YTD'],['365d','1Y'],['730d','2Y']].map(([p, label]) =>
-    `<button class="chart-period-btn${p === period ? ' active' : ''}" data-period="${p}" onclick="event.stopPropagation();setCryptoChartPeriod('${p}')">${label}</button>`
-  ).join('');
+  // Build header in column order
+  const gridCols = colOrder.map(id => _colDef(id).w).join(' ');
+  const headerCells = colOrder.map((id, idx) => {
+    const def = _colDef(id);
+    const draggable = !['rank','icon'].includes(id); // don't drag rank/icon
+    const hdrContent = id === 'chart'
+      ? `<span class="chart-period-toggle">${periodBtns}</span>`
+      : def.hdr;
+    return `<div class="lcw-col ${def.cls}${draggable ? ' col-draggable' : ''}" data-col="${id}"${draggable ? ' draggable="true"' : ''}>${hdrContent}</div>`;
+  }).join('');
 
   return `
     <div class="lcw-table-scroll-wrap">
-    <div class="lcw-table lcw-crypto-table">
+    <div class="lcw-table lcw-crypto-table" style="--crypto-grid: ${gridCols}">
       <div class="lcw-header">
-        <div class="lcw-col lcw-rank">#</div>
-        <div class="lcw-col lcw-crypto-icon"></div>
-        <div class="lcw-col lcw-coin">Coin</div>
-        <div class="lcw-col lcw-price">Price</div>
-        <div class="lcw-col lcw-ath">ATH</div>
-        <div class="lcw-col lcw-pct">↑ATH</div>
-        <div class="lcw-col lcw-pct">1H</div>
-        <div class="lcw-col lcw-pct">24H</div>
-        <div class="lcw-col lcw-pct">7D</div>
-        <div class="lcw-col lcw-pct">30D</div>
-        <div class="lcw-col lcw-pct">90D</div>
-        <div class="lcw-col lcw-pct">6M</div>
-        <div class="lcw-col lcw-pct">YTD</div>
-        <div class="lcw-col lcw-pct">1Y</div>
-        <div class="lcw-col lcw-pct">2Y</div>
-        <div class="lcw-col lcw-pct">3Y</div>
-        <div class="lcw-col lcw-pct">4Y</div>
-        <div class="lcw-col lcw-pct">5Y</div>
-        <div class="lcw-col lcw-mcap">Mkt Cap</div>
-        <div class="lcw-col lcw-vol">Volume</div>
-        <div class="lcw-col lcw-chart"><span class="chart-period-toggle">${periodBtns}</span></div>
+        ${headerCells}
       </div>
       ${rows}
     </div>
     </div>`;
+}
+
+/* ─── CRYPTO COLUMN DRAG-AND-DROP ────────────────────────────── */
+function _initCryptoColDrag() {
+  const header = document.querySelector('.lcw-crypto-table .lcw-header');
+  if (!header) return;
+  let dragColId = null;
+  header.addEventListener('dragstart', e => {
+    const col = e.target.closest('[data-col]');
+    if (!col || !col.classList.contains('col-draggable')) return;
+    dragColId = col.dataset.col;
+    col.classList.add('col-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragColId);
+  });
+  header.addEventListener('dragover', e => {
+    const col = e.target.closest('[data-col]');
+    if (!col || !dragColId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    col.classList.add('col-drag-over');
+  });
+  header.addEventListener('dragleave', e => {
+    const col = e.target.closest('[data-col]');
+    if (col) col.classList.remove('col-drag-over');
+  });
+  header.addEventListener('drop', e => {
+    e.preventDefault();
+    const targetCol = e.target.closest('[data-col]');
+    if (!targetCol || !dragColId) return;
+    const targetId = targetCol.dataset.col;
+    if (targetId === dragColId) return;
+    // Swap columns in order
+    const order = getCryptoColOrder();
+    const fromIdx = order.indexOf(dragColId);
+    const toIdx = order.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    order.splice(fromIdx, 1);
+    order.splice(toIdx, 0, dragColId);
+    saveCryptoColOrder(order);
+    // Re-render crypto dashboard
+    renderCryptoDashboard();
+  });
+  header.addEventListener('dragend', e => {
+    dragColId = null;
+    header.querySelectorAll('.col-dragging,.col-drag-over').forEach(el => {
+      el.classList.remove('col-dragging', 'col-drag-over');
+    });
+  });
 }
 
 /* ─── STOCK TABLE HOVER ──────────────────────────────────────── */
@@ -4367,7 +4453,7 @@ function openCryptoDetailModal(id) {
           <div class="hover-stat"><span class="hover-stat-label">Market Cap</span><span class="hover-stat-value">${mcap}</span></div>
           <div class="hover-stat"><span class="hover-stat-label">Volume 24H</span><span class="hover-stat-value">${vol}</span></div>
           <div class="hover-stat"><span class="hover-stat-label">ATH</span><span class="hover-stat-value">${cryptoPriceFmt(c.ath)}</span></div>
-          <div class="hover-stat"><span class="hover-stat-label">ATH Change</span><span class="hover-stat-value" style="color:var(--red)">${c.athChangePercent != null ? c.athChangePercent.toFixed(1)+'%' : '—'}</span></div>
+          <div class="hover-stat"><span class="hover-stat-label">To ATH</span><span class="hover-stat-value" style="color:var(--orange,#e3b341)">${(c.price && c.ath) ? (c.price >= c.ath ? 'AT ATH' : '+' + ((c.ath - c.price) / c.price * 100).toFixed(1) + '%') : '—'}</span></div>
         </div>
       </div>
     </div>`;
