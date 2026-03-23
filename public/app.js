@@ -90,6 +90,11 @@ async function init() {
     _preloadCryptoExtPerf(coins);
   }, 15000);
 
+  // Auto-refresh Market Maps if user is viewing it (every 5 min)
+  setInterval(() => {
+    if (state.view === 'maps' && (Date.now() - _mapsLastInit) > 5 * 60 * 1000) initTVMaps();
+  }, 5 * 60 * 1000);
+
   // Eagerly load all stock profiles so data columns populate on first view
   setTimeout(() => loadProfilesBatch(getDashSymbols()), 3000);
   // Refresh profiles every 15 min to keep data current
@@ -118,6 +123,27 @@ async function _preloadStockCharts() {
 
 async function _preload6MChange(coins) {
   for (const c of coins) {
+    // Compute 30D from cached 30d chart or fetch it (Coinpaprika's percent_change_30d is unreliable/0)
+    if (c.change30d == null || c.change30d === 0) {
+      if (state.cryptoCharts[c.id]?.['30d']?.length >= 2) {
+        const p30 = state.cryptoCharts[c.id]['30d'];
+        c.change30d = ((p30[p30.length-1] - p30[0]) / p30[0]) * 100;
+        const el = document.querySelector(`#lcw-crypto-${c.id} .lcw-30d-col`);
+        if (el) { const d = c.change30d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-30d-col`; el.textContent = fmtSmartPct(c.change30d); }
+      } else {
+        try {
+          const p30 = await api('GET', `/crypto/${c.id}/chart?range=30d`);
+          if (Array.isArray(p30) && p30.length >= 2) {
+            if (!state.cryptoCharts[c.id]) state.cryptoCharts[c.id] = {};
+            state.cryptoCharts[c.id]['30d'] = p30;
+            c.change30d = ((p30[p30.length-1] - p30[0]) / p30[0]) * 100;
+            const el = document.querySelector(`#lcw-crypto-${c.id} .lcw-30d-col`);
+            if (el) { const d = c.change30d >= 0 ? 'up' : 'down'; el.className = `lcw-col lcw-pct ${d} lcw-30d-col`; el.textContent = fmtSmartPct(c.change30d); }
+          }
+        } catch {}
+        await new Promise(r => setTimeout(r, 250));
+      }
+    }
     // Compute 90D from cached 90d chart or fetch it
     if (c.change90d == null) {
       if (state.cryptoCharts[c.id]?.['90d']?.length >= 2) {
@@ -411,6 +437,14 @@ function initSocket() {
     // Server is confirmed up — force news refresh so it always loads after connection
     dashNewsLoaded = false;
     renderAll();
+    // Extra safety: retry news after 2s if still empty (handles cold-start race)
+    setTimeout(() => {
+      const newsEl = document.getElementById('dashboard-news');
+      if (newsEl && (!newsEl.innerHTML || newsEl.innerHTML.includes('Loading headlines'))) {
+        dashNewsLoaded = false;
+        loadDashboardNews();
+      }
+    }, 2000);
   });
 
   socket.on('priceUpdate', (data) => {
@@ -3153,8 +3187,7 @@ function _mpBuildArticleHtml(articles) {
       <span class="mp-article-num">${i + 1}</span>
       ${src ? `<span class="mp-article-src">${src}</span>` : ''}
       <a class="mp-article-link" href="${link}" target="_blank" rel="noopener"
-         onmouseenter="showMpTooltip(event,'${tooltipContent.replace(/'/g, '&#39;')}')"
-         onmouseleave="hideMpTooltip()">${title}</a>
+         data-preview="1" data-url="${link}" data-title="${title}" data-source="${src}" data-date="${escHtml(fullDate)}">${title}</a>
       ${timeAgo ? `<span class="mp-article-time">${escHtml(timeAgo)}</span>` : ''}
     </li>`;
   }).join('');
@@ -3413,7 +3446,7 @@ function renderCryptoNewsViewList() {
       ? `<span class="nl-src" style="background:rgba(200,200,200,.1);color:#ccc">𝕏 ${escHtml(a.source.replace('X @', '@'))}</span>`
       : `<span class="nl-src">${escHtml(a.source || 'News')}</span>`;
     return `<div class="nl-item">
-      ${srcLabel}${freshDot}<a class="nl-title" href="${escHtml(a.link)}" target="_blank" rel="noopener">${escHtml(a.title)}</a>
+      ${srcLabel}${freshDot}<a class="nl-title" href="${escHtml(a.link)}" target="_blank" rel="noopener" data-preview="1" data-url="${escHtml(a.link)}" data-title="${escHtml(a.title)}" data-source="${escHtml(a.source || 'News')}" data-date="${escHtml(timeStr)}">${escHtml(a.title)}</a>
       <span class="nl-time">${timeStr}</span>
     </div>`;
   }).join('');
@@ -3442,6 +3475,83 @@ function removeNewsCustomSymbol(sym) {
   latestNewsData = null;
   refreshLatestNews();
 }
+
+/* ─── NEWS HOVER PREVIEW POPUP ────────────────────────────────── */
+let _newsPreviewTimer = null;
+let _newsPreviewVisible = false;
+
+function showNewsPreview(event, url, title, source, dateStr) {
+  clearTimeout(_newsPreviewTimer);
+  let popup = document.getElementById('news-preview-popup');
+  if (!popup) {
+    popup = document.createElement('div');
+    popup.id = 'news-preview-popup';
+    popup.className = 'news-preview-popup';
+    popup.onmouseenter = () => { clearTimeout(_newsPreviewTimer); _newsPreviewVisible = true; };
+    popup.onmouseleave = () => hideNewsPreview();
+    document.body.appendChild(popup);
+  }
+  _newsPreviewVisible = true;
+  const safeUrl = escHtml(url);
+  const safeTitle = escHtml(title);
+  const safeSrc = escHtml(source);
+  popup.innerHTML = `
+    <div class="news-preview-header">
+      <div class="news-preview-meta">
+        <span class="news-preview-source">${safeSrc}</span>
+        <span class="news-preview-date">${escHtml(dateStr)}</span>
+      </div>
+      <a class="news-preview-open" href="${safeUrl}" target="_blank" rel="noopener">Open in new tab ↗</a>
+    </div>
+    <div class="news-preview-title">${safeTitle}</div>
+    <div class="news-preview-iframe-wrap">
+      <iframe src="${safeUrl}" class="news-preview-iframe" sandbox="allow-same-origin allow-scripts" loading="lazy"></iframe>
+      <div class="news-preview-iframe-fallback">
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:10px">Preview unavailable — this site blocks embedding.</div>
+        <a href="${safeUrl}" target="_blank" rel="noopener" class="btn-primary" style="font-size:12px;padding:6px 16px;text-decoration:none">Read Full Article ↗</a>
+      </div>
+    </div>`;
+  // Position popup
+  const rect = event.target.getBoundingClientRect();
+  const popW = 560, popH = 480;
+  let left = Math.min(rect.left, window.innerWidth - popW - 20);
+  let top = rect.bottom + 6;
+  if (top + popH > window.innerHeight) top = Math.max(10, rect.top - popH - 6);
+  popup.style.left = left + 'px';
+  popup.style.top = top + 'px';
+  popup.classList.add('visible');
+
+  // Detect iframe load failure (X-Frame-Options)
+  const iframe = popup.querySelector('.news-preview-iframe');
+  const fallback = popup.querySelector('.news-preview-iframe-fallback');
+  if (iframe && fallback) {
+    iframe.onerror = () => { iframe.style.display = 'none'; fallback.style.display = 'flex'; };
+    setTimeout(() => {
+      try { if (!iframe.contentDocument?.body?.innerHTML) { iframe.style.display = 'none'; fallback.style.display = 'flex'; } }
+      catch { iframe.style.display = 'none'; fallback.style.display = 'flex'; }
+    }, 3000);
+  }
+}
+
+function hideNewsPreview() {
+  _newsPreviewTimer = setTimeout(() => {
+    _newsPreviewVisible = false;
+    const popup = document.getElementById('news-preview-popup');
+    if (popup) popup.classList.remove('visible');
+  }, 300);
+}
+
+// Delegated hover listener for all news links with data-preview attribute
+document.addEventListener('mouseenter', e => {
+  const link = e.target.closest('.nl-title[data-preview], .mp-article-link[data-preview], .dash-news-title a[data-preview]');
+  if (link) {
+    showNewsPreview(e, link.dataset.url || link.href, link.dataset.title || link.textContent, link.dataset.source || '', link.dataset.date || '');
+  }
+}, true);
+document.addEventListener('mouseleave', e => {
+  const link = e.target.closest('.nl-title[data-preview], .mp-article-link[data-preview], .dash-news-title a[data-preview]');
+  if (link) hideNewsPreview();
+}, true);
 
 function renderNewsCustSymbols() {
   const el = document.getElementById('news-cust-sym-list');
@@ -3537,7 +3647,7 @@ function renderNewsItems() {
 
     return `<div class="nl-item${breaking ? ' nl-breaking' : portfolio ? ' nl-portfolio' : ''}">
       <span class="nl-src ${srcClass}">${escHtml(srcDisplay)}</span>${freshDot}${n.relatedSymbol ? `<button class="news-sym-pill" onclick="showNewsModal('${escHtml(n.relatedSymbol)}')">${escHtml(n.relatedSymbol)}</button>` : ''}
-      <a class="nl-title" href="${escHtml(n.link)}" target="_blank" rel="noopener" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${catsAttr})">${escHtml(n.title)}</a>
+      <a class="nl-title" href="${escHtml(n.link)}" target="_blank" rel="noopener" data-preview="1" data-url="${escHtml(n.link)}" data-title="${escHtml(n.title)}" data-source="${escHtml(src)}" data-date="${escHtml(timeStr)}" onclick="recordNewsClick('${newsKey.replace(/'/g,"\\'")}',${catsAttr})">${escHtml(n.title)}</a>
       <span class="nl-time">${timeStr}</span>
     </div>`;
   }).join('');
@@ -3590,8 +3700,8 @@ async function loadDashboardNews() {
     const renderItems = _dashNewsCache.length ? _dashNewsCache : items;
     if (!renderItems.length) {
       container.innerHTML = `<div class="dashboard-news-header"><h3>Latest Market News</h3></div><div style="padding:16px;color:var(--text-dim);font-size:13px">Loading headlines… please wait a moment.</div>`;
-      // Retry in 15 seconds if empty
-      setTimeout(() => { dashNewsLoaded = false; loadDashboardNews(); }, 15000);
+      // Retry in 5 seconds if empty (faster recovery from cold start)
+      setTimeout(() => { dashNewsLoaded = false; loadDashboardNews(); }, 5000);
       return;
     }
 
@@ -3621,6 +3731,9 @@ async function loadDashboardNews() {
     if (_dashNewsCache.length) {
       dashNewsLoaded = true;
       loadDashboardNews();
+    } else {
+      // No cache, retry in 5 seconds
+      setTimeout(() => { dashNewsLoaded = false; loadDashboardNews(); }, 5000);
     }
   }
 }
@@ -3875,10 +3988,13 @@ function renderCryptoHoverPopup(c, el) {
   const dir = (c.change24h || 0) >= 0 ? 'up' : 'down';
   const popupId = `chp-${c.id}`;
   const POPUP_PERIODS = [
-    { label: '1D', range: '1d', chg: null },
-    { label: '7D', range: '7d', chg: c.change7d },
-    { label: '1M', range: '30d', chg: c.change30d },
-    { label: '1Y', range: '365d', chg: c.change1y },
+    { label: '1D', range: '1d' },
+    { label: '7D', range: '7d' },
+    { label: '1M', range: '30d' },
+    { label: 'YTD', range: 'ytd' },
+    { label: '1Y', range: '365d' },
+    { label: '3Y', range: '1095d' },
+    { label: '5Y', range: '1825d' },
   ];
 
   el.innerHTML = `
@@ -3906,12 +4022,14 @@ function renderCryptoHoverPopup(c, el) {
     <div class="hover-popup-periods" id="${popupId}-periods">
       ${POPUP_PERIODS.map(p => `<button class="hover-popup-period-btn${p.range === '1d' ? ' active' : ''}" onclick="event.stopPropagation();loadCryptoPopupChart('${c.id}','${p.range}',this,'${popupId}')" onmouseenter="loadCryptoPopupChart('${c.id}','${p.range}',this,'${popupId}')">${p.label}</button>`).join('')}
     </div>
-    <div class="hover-popup-chart-wrap" id="${popupId}-chart"><div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading chart…</div></div>
+    <div class="hover-popup-chart-wrap" id="${popupId}-chart"><div style="height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading chart…</div></div>
     <div class="hover-stats-grid">
       <div class="hover-stat"><span class="hover-stat-label">Market Cap</span><span class="hover-stat-value">${mcap}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">Volume 24H</span><span class="hover-stat-value">${vol}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">ATH</span><span class="hover-stat-value">${cryptoPriceFmt(c.ath)}</span></div>
       <div class="hover-stat"><span class="hover-stat-label">ATH Change</span><span class="hover-stat-value" style="color:var(--red)">${c.athChangePercent != null ? c.athChangePercent.toFixed(1) + '%' : '—'}</span></div>
+      <div class="hover-stat"><span class="hover-stat-label">24H High</span><span class="hover-stat-value">${cryptoPriceFmt(c.high24h)}</span></div>
+      <div class="hover-stat"><span class="hover-stat-label">24H Low</span><span class="hover-stat-value">${cryptoPriceFmt(c.low24h)}</span></div>
     </div>`;
   // Auto-load the default 7D chart
   loadCryptoPopupChart(c.id, '1d', el.querySelector('.hover-popup-period-btn.active'), popupId);
@@ -3931,11 +4049,11 @@ async function loadCryptoPopupChart(id, range, btnEl, popupId) {
   if (btnEl) btnEl.classList.add('active');
   const chartEl = document.getElementById(popupId + '-chart');
   if (!chartEl) return;
-  chartEl.innerHTML = '<div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading…</div>';
+  chartEl.innerHTML = '<div style="height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading…</div>';
   try {
     const prices = await api('GET', `/crypto/${id}/chart?range=${range}`);
-    if (!Array.isArray(prices) || prices.length < 2) { chartEl.innerHTML = '<div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">No data</div>'; return; }
-    const W = 360, H = 80;
+    if (!Array.isArray(prices) || prices.length < 2) { chartEl.innerHTML = '<div style="height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">No data</div>'; return; }
+    const W = 520, H = 120;
     const min = Math.min(...prices), max = Math.max(...prices), span = max - min || 1;
     const step = W / (prices.length - 1);
     const toY = v => H - ((v - min) / span) * (H - 8) - 4;
@@ -3954,7 +4072,7 @@ async function loadCryptoPopupChart(id, range, btnEl, popupId) {
       <span>${last >= first ? '▲' : '▼'} ${Math.abs(((last-first)/first)*100).toFixed(2)}%</span>
       <span>${last >= 1 ? '$' + last.toLocaleString('en-US',{maximumFractionDigits:2}) : '$' + last.toFixed(6)}</span>
     </div>`;
-  } catch (e) { chartEl.innerHTML = '<div style="height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">—</div>'; }
+  } catch (e) { chartEl.innerHTML = '<div style="height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">—</div>'; }
 }
 
 function hideCryptoCoin(id) {
@@ -4040,7 +4158,7 @@ function buildCryptoDetailedTable(coins) {
         ${fmtPctCell(c.change1h)}
         ${fmtPctCell(c.change24h)}
         ${fmtPctCell(c.change7d)}
-        ${fmtPctCell(c.change30d)}
+        <div class="lcw-col lcw-pct lcw-30d-col${c.change30d != null && c.change30d !== 0 ? (c.change30d >= 0 ? ' up' : ' down') : ''}">${c.change30d != null && c.change30d !== 0 ? fmtSmartPct(c.change30d) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-90d-col${c.change90d != null ? (c.change90d >= 0 ? ' up' : ' down') : ''}">${c.change90d != null ? fmtSmartPct(c.change90d) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-6m-col${(c.change6m ?? c.change200d) != null ? ((c.change6m ?? c.change200d) >= 0 ? ' up' : ' down') : ''}">${(c.change6m ?? c.change200d) != null ? fmtSmartPct(c.change6m ?? c.change200d) : '—'}</div>
         <div class="lcw-col lcw-pct lcw-ytd-col${c.changeYTD != null ? (c.changeYTD >= 0 ? ' up' : ' down') : ''}">${c.changeYTD != null ? fmtSmartPct(c.changeYTD) : '—'}</div>
@@ -4186,10 +4304,26 @@ function openCryptoDetailModal(id) {
   const priceStr = cryptoPriceFmt(c.price);
   const mcap = c.marketCap ? fmtVol(c.marketCap) : '—';
   const vol = c.volume24h ? fmtVol(c.volume24h) : '—';
-  const sparkSvg = buildSparklineSVG(c.sparkline, 560, 100, '#77DD77', '#FF6B6B');
   const dir = (c.change24h || 0) >= 0 ? 'up' : 'down';
+  const modalChartId = `cdm-chart-${c.id}`;
+  const modalPeriodsId = `cdm-periods-${c.id}`;
 
-  // Build or reuse modal
+  const MODAL_PERIODS = [
+    { label: '1D', range: '1d' },
+    { label: '7D', range: '7d' },
+    { label: '1M', range: '30d' },
+    { label: 'YTD', range: 'ytd' },
+    { label: '1Y', range: '365d' },
+    { label: '3Y', range: '1095d' },
+    { label: '5Y', range: '1825d' },
+  ];
+
+  const perfItems = [
+    ['1H',c.change1h],['24H',c.change24h],['7D',c.change7d],['30D',c.change30d],
+    ['90D',c.change90d],['6M',c.change6m||c.change200d],['YTD',c.changeYTD],
+    ['1Y',c.change1y],['2Y',c.change2y],['3Y',c.change3y],['5Y',c.change5y]
+  ];
+
   let modal = document.getElementById('crypto-detail-modal');
   if (!modal) {
     modal = document.createElement('div');
@@ -4199,10 +4333,10 @@ function openCryptoDetailModal(id) {
     document.body.appendChild(modal);
   }
   modal.innerHTML = `
-    <div class="modal-box" style="max-width:640px">
+    <div class="modal-box" style="max-width:780px">
       <div class="modal-header">
         <div style="display:flex;align-items:center;gap:10px">
-          <img src="${c.image}" style="width:36px;height:36px;border-radius:50%" onerror="this.style.display='none'"/>
+          <img src="${c.image}" style="width:40px;height:40px;border-radius:50%" onerror="this.style.display='none'"/>
           <div>
             <h2 class="modal-title">${c.symbol} — ${c.name}</h2>
             <div style="font-size:12px;color:var(--text-dim)">Rank #${c.rank || '—'}</div>
@@ -4215,16 +4349,19 @@ function openCryptoDetailModal(id) {
           <div style="font-size:28px;font-weight:800">${priceStr}</div>
           <div class="detail-change ${dir}" style="font-size:16px">${c.change24h != null ? (c.change24h >= 0 ? '+' : '') + c.change24h.toFixed(2) + '%' : '—'} (24h)</div>
         </div>
-        ${sparkSvg ? `<div class="hover-sparkline">${sparkSvg}</div>` : ''}
-        <div class="perf-bar" style="margin:12px 0">
-          ${[['1H',c.change1h],['24H',c.change24h],['7D',c.change7d],['30D',c.change30d],['~6M',c.change200d],['1Y',c.change1y]].map(([l,v])=>{
+        <div class="perf-bar" style="margin:12px 0;flex-wrap:wrap">
+          ${perfItems.map(([l,v])=>{
             if(v==null)return '';
             const d=v>=0?'up':'down';
             const txt=Math.abs(v)>=1e5?fmtLargePct(v):`${v>=0?'+':''}${v.toFixed(1)}%`;
             return `<div class="perf-item"><span class="perf-label">${l}</span><span class="perf-val ${d}">${txt}</span></div>`;
           }).join('')}
         </div>
-        <div class="hover-stats-grid">
+        <div class="hover-popup-periods" id="${modalPeriodsId}" style="margin:10px 0">
+          ${MODAL_PERIODS.map(p => `<button class="hover-popup-period-btn${p.range === '7d' ? ' active' : ''}" onclick="loadCryptoPopupChart('${c.id}','${p.range}',this,'cdm-${c.id}')">${p.label}</button>`).join('')}
+        </div>
+        <div class="hover-popup-chart-wrap" id="${modalChartId}"><div style="height:160px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">Loading chart…</div></div>
+        <div class="hover-stats-grid" style="margin-top:14px">
           <div class="hover-stat"><span class="hover-stat-label">24H High</span><span class="hover-stat-value">${cryptoPriceFmt(c.high24h)}</span></div>
           <div class="hover-stat"><span class="hover-stat-label">24H Low</span><span class="hover-stat-value">${cryptoPriceFmt(c.low24h)}</span></div>
           <div class="hover-stat"><span class="hover-stat-label">Market Cap</span><span class="hover-stat-value">${mcap}</span></div>
@@ -4232,12 +4369,11 @@ function openCryptoDetailModal(id) {
           <div class="hover-stat"><span class="hover-stat-label">ATH</span><span class="hover-stat-value">${cryptoPriceFmt(c.ath)}</span></div>
           <div class="hover-stat"><span class="hover-stat-label">ATH Change</span><span class="hover-stat-value" style="color:var(--red)">${c.athChangePercent != null ? c.athChangePercent.toFixed(1)+'%' : '—'}</span></div>
         </div>
-        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--text-dim);text-align:center">
-          Crypto price alerts coming soon · Stock alerts available on the Stock Dashboard
-        </div>
       </div>
     </div>`;
   modal.classList.add('active');
+  // Auto-load 7D chart for modal
+  loadCryptoPopupChart(c.id, '7d', modal.querySelector('.hover-popup-period-btn.active'), `cdm-${c.id}`);
 }
 
 async function setCryptoChartPeriod(period) {
@@ -4809,7 +4945,8 @@ function _injectTVWidget(containerId, widgetName, config) {
   container.dataset.initialized = 'true';
   container.innerHTML = ''; // clear any placeholder
   const script = document.createElement('script');
-  script.src = `https://s3.tradingview.com/external-embedding/embed-widget-${widgetName}.js`;
+  // Cache-bust to ensure fresh widget data
+  script.src = `https://s3.tradingview.com/external-embedding/embed-widget-${widgetName}.js?t=${Date.now()}`;
   script.async = true;
   script.text = JSON.stringify(config);
   container.appendChild(script);
@@ -4821,6 +4958,7 @@ let _mapsSourceLabel = 'S&P 500';
 let _mapsGrouping = 'sector';
 let _mapsMetric = 'change';
 
+let _mapsLastInit = 0;
 function initTVMaps() {
   // Always re-render with current params (clear initialized flag)
   const container = document.getElementById('tv-maps-container');
@@ -4828,6 +4966,7 @@ function initTVMaps() {
     container.dataset.initialized = '';
     container.innerHTML = '';
   }
+  _mapsLastInit = Date.now();
   const h = Math.max(500, window.innerHeight - 130);
   _injectTVWidget('tv-maps-container', 'stock-heatmap', {
     exchanges: [],
