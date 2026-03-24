@@ -1653,15 +1653,70 @@ async function fetchKuCoinPrices(symbol, startAt, endAt, type = '1day') {
   return { prices: json.data.slice().reverse().map(k => parseFloat(k[2])).filter(v => v > 0), firstTs: parseInt(json.data[json.data.length - 1][0]) * 1000 };
 }
 
-// Stablecoins: no KuCoin pair exists (USDT IS the quote currency). Return flat ~$1 prices.
-const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FRAX', 'USDP', 'GUSD', 'USDD', 'FDUSD', 'PYUSD', 'LUSD', 'SUSD', 'MIM']);
+// ─── BINANCE fallback — broader USDT pair coverage, higher rate limits ────────
+// Binance klines: chronological order, close price at index 4
+async function fetchBinancePrices(symbol, limit, interval = '1d') {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`;
+  const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
+  if (!r.ok) throw new Error(`Binance ${r.status}`);
+  const json = await r.json();
+  if (!Array.isArray(json) || json.length < 2) throw new Error('No Binance data');
+  return json.map(k => parseFloat(k[4])).filter(v => v > 0);
+}
 
-// Tokens not on KuCoin → map to CoinGecko IDs for fallback
+async function fetchBinancePricesLong(symbol, limitTotal) {
+  // Binance max 1000 per request — split into two for periods >1000 days
+  if (limitTotal <= 1000) return fetchBinancePrices(symbol, limitTotal);
+  const cutoffMs = Date.now() - 1000 * 86400 * 1000; // 1000 days ago
+  const chunk1Limit = limitTotal - 1000;
+  const [older, newer] = await Promise.all([
+    (async () => {
+      const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1d&limit=${chunk1Limit}&endTime=${cutoffMs}`;
+      const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
+      if (!r.ok) throw new Error(`Binance ${r.status}`);
+      const j = await r.json();
+      return Array.isArray(j) ? j.map(k => parseFloat(k[4])).filter(v => v > 0) : [];
+    })(),
+    fetchBinancePrices(symbol, 1000),
+  ]);
+  return [...older, ...newer];
+}
+
+// Stablecoins: no KuCoin/Binance USDT pair exists. Return flat ~$1 prices.
+const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FRAX', 'USDP', 'GUSD', 'USDD', 'FDUSD', 'PYUSD', 'LUSD', 'SUSD', 'MIM', 'USDE', 'SUSDE', 'USDS']);
+
+// Symbol remaps: coins that changed ticker on exchanges (old Coinpaprika symbol → current exchange symbol)
+const SYMBOL_REMAP = {
+  'MATIC': 'POL',  // Polygon rebranded MATIC → POL on Sep 4 2024
+};
+
+// Tokens not on KuCoin or Binance → map to CoinGecko IDs for last-resort fallback
 const COINGECKO_ID_MAP = {
+  // Liquid staking tokens (not tradeable vs USDT on major CEXs)
   'STETH': 'staked-ether', 'WSTETH': 'wrapped-steth', 'CBETH': 'coinbase-wrapped-staked-eth',
   'RETH': 'rocket-pool-eth', 'WEETH': 'wrapped-eeth', 'EETH': 'ether-fi-staked-eth',
   'EZETH': 'renzo-restaked-eth', 'RSETH': 'kelp-dao-restaked-eth', 'OSETH': 'stakewise-v3-oseth',
+  // BTC wrappers
+  'WBTC': 'wrapped-bitcoin', 'BTCB': 'bitcoin-bep2', 'HBTC': 'huobi-btc',
   'SOLVBTC': 'solv-protocol-solvbtc', 'LBTC': 'lombard-staked-btc',
+  // ETH wrappers
+  'WETH': 'weth', 'WBNB': 'wbnb',
+  // Exchange-native tokens (not listed on competing exchanges)
+  'LEO': 'leo-token',          // Bitfinex token
+  'OKB': 'okb',                // OKX token
+  'WBT': 'whitebit',           // WhiteBIT token
+  'BGB': 'bitget-token',       // Bitget token
+  'GT': 'gatechain-token',     // Gate.io token
+  'HT': 'huobi-token',         // Huobi token
+  'MX': 'mx-token',            // MEXC token
+  'CRO': 'crypto-com-chain',   // Crypto.com token
+  'FTT': 'ftx-token',          // FTX token (defunct but historical data)
+  // Rebranded tokens (old symbol → CoinGecko ID)
+  'MATIC': 'matic-network',    // Polygon (now POL on exchanges)
+  'POL': 'matic-network',      // Polygon new symbol
+  // Other notable tokens not universally listed
+  'CC': 'canton-network',      // Canton Network
+  'HYPE': 'hyperliquid',       // HyperLiquid (may not be on KuCoin)
 };
 
 async function fetchCoinGeckoPrices(cgId, days) {
@@ -1684,7 +1739,9 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   const cacheTTL = range === '1d' ? 60 * 1000 : 10 * 60 * 1000;
   if (cached && (Date.now() - cached.at) < cacheTTL) return res.json(cached.data);
 
-  const symbol = id.split('-')[0].toUpperCase();
+  const rawSymbol = id.split('-')[0].toUpperCase();
+  // Apply symbol remaps for rebranded coins (e.g. MATIC → POL on exchanges)
+  const symbol = SYMBOL_REMAP[rawSymbol] || rawSymbol;
   const nowTs = Math.floor(Date.now() / 1000);
   const ytdDays = Math.ceil((now - new Date(now.getFullYear(), 0, 1)) / 86400000) || 1;
   const LIMIT_MAP = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, 'ytd': ytdDays, '365d': 365, '1y': 365, '730d': 730, '2y': 730, '1095d': 1095, '3y': 1095, '1460d': 1460, '4y': 1460, '1825d': 1825, '5y': 1825 };
@@ -1695,7 +1752,7 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
     if (!limit && range !== '1d') return res.status(400).json({ error: 'Invalid range' });
 
     // Stablecoins: no tradeable USDT pair — return flat $1 prices (correct ~0% change)
-    if (STABLECOINS.has(symbol)) {
+    if (STABLECOINS.has(rawSymbol) || STABLECOINS.has(symbol)) {
       const n = range === '1d' ? 24 : (limit || 30);
       prices = Array(n).fill(1.0);
       cryptoChartCache[cacheKey] = { data: prices, at: Date.now() };
@@ -1718,13 +1775,28 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
       try { const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - limit * 86400, nowTs); prices = p; } catch {}
     }
 
-    // Fallback: CoinGecko for tokens without KuCoin pairs (STETH, WSTETH, etc.)
-    if (prices.length < 2 && COINGECKO_ID_MAP[symbol]) {
+    // Fallback 1: Binance — much broader USDT pair coverage than KuCoin
+    if (prices.length < 2) {
+      try {
+        if (range === '1d') {
+          prices = await fetchBinancePrices(symbol, 24, '1h');
+        } else if (limit > 1000) {
+          prices = await fetchBinancePricesLong(symbol, limit);
+        } else {
+          prices = await fetchBinancePrices(symbol, limit);
+        }
+        if (prices.length >= 2) console.log(`Binance fallback used for ${symbol} (${range}): ${prices.length} prices`);
+      } catch (e) { console.warn(`Binance fallback failed for ${symbol}:`, e.message); }
+    }
+
+    // Fallback 2: CoinGecko for tokens not on KuCoin or Binance (LSTs, exchange tokens, rebranded, etc.)
+    const cgId = COINGECKO_ID_MAP[rawSymbol] || COINGECKO_ID_MAP[symbol];
+    if (prices.length < 2 && cgId) {
       try {
         const days = range === '1d' ? 1 : (limit || 30);
-        prices = await fetchCoinGeckoPrices(COINGECKO_ID_MAP[symbol], days);
-        console.log(`CoinGecko fallback used for ${symbol} (${range}): ${prices.length} prices`);
-      } catch (e) { console.warn(`CoinGecko fallback failed for ${symbol}:`, e.message); }
+        prices = await fetchCoinGeckoPrices(cgId, days);
+        console.log(`CoinGecko fallback used for ${rawSymbol} (${range}): ${prices.length} prices`);
+      } catch (e) { console.warn(`CoinGecko fallback failed for ${rawSymbol}:`, e.message); }
     }
 
     if (prices.length < 2) return res.status(500).json({ error: 'No chart data available' });
@@ -1814,18 +1886,27 @@ app.get('/api/crypto/:id/inception', async (req, res) => {
       }
     } catch (e) { console.log(`CryptoCompare inception fallback for ${symbol}:`, e.message); }
 
-    // Fallback: KuCoin weekly candles from 2010
+    // Fallback 1: KuCoin weekly candles from 2010
     if (change === null) {
       try {
         const CRYPTO_GENESIS = 1262304000; // 2010-01-01 in seconds
         const { prices, firstTs } = await fetchKuCoinPrices(symbol, CRYPTO_GENESIS, nowTs, '1week');
         if (prices.length >= 2) {
           change = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
-          // If Coinpaprika didn't provide a date, use KuCoin's first data as last resort
           if (!listedDate) {
             const d = new Date(firstTs);
             listedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
           }
+        }
+      } catch {}
+    }
+
+    // Fallback 2: Binance weekly candles for coins not on KuCoin
+    if (change === null && !STABLECOINS.has(symbol)) {
+      try {
+        const prices = await fetchBinancePrices(symbol, 1000, '1w');
+        if (prices.length >= 2) {
+          change = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
         }
       } catch {}
     }
