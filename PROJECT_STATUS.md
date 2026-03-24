@@ -50,13 +50,18 @@ Implementing **6 major UX/feature redesigns** to improve dashboard usability and
 
 | Bug | Severity | Status | Last Checked |
 |-----|----------|--------|--------------|
-| (Add bugs as discovered) | - | 📝 Todo | 2026-03-15 |
+| Economic Calendar stuck "Loading..." | High | ✅ Fixed 2026-03-23 | loadEconCalendar now sets _econCalLoaded=true even on failure |
+| Crypto News broken links (CDATA) | High | ✅ Fixed 2026-03-23 | parseCryptoRSS now strips CDATA wrappers from link tags |
+| TV Maps/Screener/Heatmap black | High | ✅ Fixed 2026-03-23 | Added explicit container height before widget injection |
+| Fundamentals data always "—" | High | ✅ Fixed 2026-03-23 | Added v7 quote API fallback when quoteSummary crumb fails |
+| Crypto news shows irrelevant articles | Medium | ✅ Fixed 2026-03-23 | Added crypto keyword filter to Google News RSS results |
 
 ---
 
 ## 📋 Session Notes
 
 ### Recent Sessions
+- **2026-03-23 (Session 4)**: Bug audit fixes. Fixed 5 major bugs: economic calendar stuck loading, CDATA broken crypto news links, TV widget black screens (Maps/Screener/Heatmap), fundamentals data never loading (added v7 API fallback), crypto news irrelevant articles. Also set bypass permissions globally.
 - **2026-03-16 (Session 3)**: Completed final batch of features (rows 25-29). Crypto Compact Grid, live news from 3 sources, mute button, stock table hover popups, pin coins. All verified live ✅.
 - **2026-03-15 (Session 2)**: Applied 7 bug fixes across Crypto + Stock dashboards. See feature list rows 16-24 for details.
 - **2026-03-15 (Session 1)**: Project recovery + workspace setup. Created PROJECT_STATUS.md dashboard and memory system.

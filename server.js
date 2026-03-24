@@ -251,6 +251,30 @@ async function yfProfile(symbol) {
     } catch (e) { console.error(`Profile quoteSummary error for ${symbol}:`, e.message); }
   }
 
+  // 1b) v7 quote fallback — no crumb needed, provides key fundamentals when quoteSummary fails
+  const missingCore = !result.marketCap || !result.trailingPE || !result.week52High;
+  if (missingCore) {
+    try {
+      const v7url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}&fields=marketCap,trailingPE,epsTrailingTwelveMonths,fiftyTwoWeekLow,fiftyTwoWeekHigh,averageDailyVolume3Month,beta,bookValue,priceToBook,forwardPE`;
+      const v7res = await fetch(v7url, { headers: YF_HEADERS, signal: AbortSignal.timeout(6000) });
+      if (v7res.ok) {
+        const v7json = await v7res.json();
+        const q = v7json.quoteResponse?.result?.[0];
+        if (q) {
+          if (!result.marketCap && q.marketCap) result.marketCap = fmtMktCap(q.marketCap);
+          if (!result.trailingPE && q.trailingPE) result.trailingPE = q.trailingPE.toFixed(2);
+          if (!result.forwardPE && q.forwardPE) result.forwardPE = q.forwardPE.toFixed(2);
+          if (!result.eps && q.epsTrailingTwelveMonths) result.eps = q.epsTrailingTwelveMonths.toFixed(2);
+          if (!result.week52Low && q.fiftyTwoWeekLow) result.week52Low = q.fiftyTwoWeekLow;
+          if (!result.week52High && q.fiftyTwoWeekHigh) result.week52High = q.fiftyTwoWeekHigh;
+          if (!result.beta && q.beta) result.beta = q.beta.toFixed(2);
+          if (!result.priceToBook && q.priceToBook) result.priceToBook = q.priceToBook.toFixed(2);
+          console.log(`v7 fallback filled missing fundamentals for ${symbol}`);
+        }
+      }
+    } catch (e) { console.warn(`v7 fallback failed for ${symbol}:`, e.message); }
+  }
+
   // 2) Sparkline (1-month chart, no auth needed)
   try {
     const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`;
@@ -1795,7 +1819,8 @@ function parseCryptoRSS(xml, source) {
   for (const [item] of items) {
     const titleRaw = (item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || item.match(/<title>([\s\S]*?)<\/title>/))?.[1]?.trim();
     const title = decodeHtmlEntities(titleRaw);
-    const link = (item.match(/<link>(.*?)<\/link>/) || item.match(/<guid[^>]*isPermaLink[^>]*>(https?:\/\/[^<]+)<\/guid>/) || item.match(/<guid[^>]*>(https?:\/\/[^<]+)<\/guid>/))?.[1]?.trim();
+    const linkRaw = (item.match(/<link>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/link>/) || item.match(/<guid[^>]*isPermaLink[^>]*>(https?:\/\/[^<]+)<\/guid>/) || item.match(/<guid[^>]*>(https?:\/\/[^<]+)<\/guid>/))?.[1]?.trim();
+    const link = linkRaw?.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim();
     const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim();
     if (title && link) result.push({ title, link, source, publishedAt: pubDate ? new Date(pubDate).toISOString() : null });
   }
@@ -1831,13 +1856,18 @@ async function fetchCryptoNews() {
     { url: 'https://news.google.com/rss/search?q=crypto+blockchain+defi+altcoin&hl=en-US&gl=US&ceid=US:en', source: 'Google News' },
     { url: 'https://news.google.com/rss/search?q=BTC+ETH+crypto+market+price&hl=en-US&gl=US&ceid=US:en', source: 'Google News' },
   ];
+  const cryptoKw = /bitcoin|btc|ethereum|eth|crypto|blockchain|defi|nft|coin|token|solana|sol|binance|bnb|altcoin|web3|stablecoin|memecoin|ripple|xrp|dogecoin|doge|cardano|ada|polygon|matic|avalanche|avax|chainlink|link|uniswap|aave|litecoin|ltc/i;
   await Promise.allSettled(cryptoGoogleFeeds.map(async f => {
     try {
       const r = await fetch(f.url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
         signal: AbortSignal.timeout(8000),
       });
-      if (r.ok) articles.push(...parseCryptoRSS(await r.text(), f.source));
+      if (r.ok) {
+        const parsed = parseCryptoRSS(await r.text(), f.source);
+        // Filter to only crypto-relevant articles (removes unrelated Google News spillover)
+        articles.push(...parsed.filter(a => cryptoKw.test(a.title)));
+      }
     } catch (_) {}
   }));
 
@@ -1874,8 +1904,6 @@ async function fetchCryptoNews() {
       });
       if (r.ok) {
         const parsed = parseCryptoRSS(await r.text(), `X @${handle}`);
-        // Only keep tweets with crypto-relevant content
-        const cryptoKw = /bitcoin|btc|eth|crypto|blockchain|defi|nft|coin|token|solana|binance/i;
         articles.push(...parsed.filter(a => cryptoKw.test(a.title)));
       }
     } catch (_) {}

@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "stock-tracker",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
+      "runtimeExecutable": "/Users/frankmac/bin/node_copy",
+      "runtimeArgs": ["/Users/frankmac/Library/CloudStorage/GoogleDrive-yangfranky@gmail.com/My Drive/1-AI Learning & Tools/2-Frank AI Tools/stock-tracker/server.js"],
       "port": 3000,
       "autoPort": true
     }

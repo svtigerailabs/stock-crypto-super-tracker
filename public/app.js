@@ -4995,6 +4995,8 @@ function initTVMaps() {
   }
   _mapsLastInit = Date.now();
   const h = Math.max(500, window.innerHeight - 130);
+  // Set explicit height BEFORE widget injects so iframe gets correct dimensions
+  if (container) container.style.height = h + 'px';
   _injectTVWidget('tv-maps-container', 'stock-heatmap', {
     exchanges: [],
     dataSource: _mapsSource,
@@ -5020,6 +5022,7 @@ function initTVCryptoHeatmap() {
   container.dataset.initialized = '';
   container.innerHTML = '';
   const h = Math.max(500, window.innerHeight - 205);
+  container.style.height = h + 'px';
   _injectTVWidget('tv-crypto-heatmap-container', 'crypto-coins-heatmap', {
     dataSource: 'Crypto',
     blockSize: 'market_cap_calc',
@@ -5082,11 +5085,14 @@ const COUNTRY_FLAGS = {
 async function loadEconCalendar() {
   try {
     const data = await api('GET', '/economic-calendar');
-    if (Array.isArray(data) && data.length) {
+    if (Array.isArray(data)) {
       _econCalData = data;
-      _econCalLoaded = true;
+      _econCalLoaded = true; // always mark loaded, even if empty
     }
-  } catch(e) { console.warn('Econ calendar load failed:', e.message); }
+  } catch(e) {
+    console.warn('Econ calendar load failed:', e.message);
+    _econCalLoaded = true; // mark loaded so we show "no data" instead of "Loading..."
+  }
   renderEconCalendar();
   // Also load earnings calendar alongside
   if (!_earningsCalLoaded) loadEarningsCalendar();
@@ -5377,13 +5383,14 @@ function setScreenerLength(n) {
 function initTVScreener() {
   // Re-init if filters changed
   const container = document.getElementById('tv-screener-container');
-  if (container) { delete container.dataset.initialized; container.innerHTML = ''; }
+  const h = Math.max(600, _screenerLength <= 50 ? 650 : _screenerLength <= 100 ? 800 : 1200);
+  if (container) { delete container.dataset.initialized; container.innerHTML = ''; container.style.height = h + 'px'; }
   const market = document.getElementById('screener-market')?.value || 'america';
   const col = document.getElementById('screener-column')?.value || 'performance';
   const screen = document.getElementById('screener-screen')?.value || 'most_capitalized';
   _injectTVWidget('tv-screener-container', 'screener', {
     width: '100%',
-    height: Math.max(600, _screenerLength <= 50 ? 650 : _screenerLength <= 100 ? 800 : 1200),
+    height: h,
     defaultColumn: col,
     defaultScreen: screen,
     market: market,
