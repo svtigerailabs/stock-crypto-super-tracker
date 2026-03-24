@@ -2842,18 +2842,21 @@ function onDrop(e) {
 
 async function saveCardOrder() {
   const grid = document.getElementById('stocks-grid');
-  const order = [...grid.querySelectorAll('.stock-card')].map(c => c.id.replace('card-', ''));
+  if (!grid) return;
+  const order = [...grid.querySelectorAll('.stock-card')].map(c => c.id.replace('card-', '')).filter(Boolean);
   state.settings.dashboardOrder = order;
   try { await api('PUT', '/dashboard/order', { order }); } catch (e) { console.warn('Order save failed:', e); }
 }
 
 async function removeFromDashboard(symbol) {
   if (!confirm(`Remove ${symbol} from dashboard? All its alerts will be deleted.`)) return;
-  const toDelete = state.alerts.filter(a => a.symbol === symbol);
+  const toDelete = (state.alerts || []).filter(a => a.symbol === symbol);
   try {
-    await Promise.all(toDelete.map(a => api('DELETE', `/alerts/${a.id}`)));
-    state.alerts = state.alerts.filter(a => a.symbol !== symbol);
+    if (toDelete.length) await Promise.all(toDelete.map(a => api('DELETE', `/alerts/${a.id}`)));
+    state.alerts = (state.alerts || []).filter(a => a.symbol !== symbol);
     if (state.settings.dashboardOrder) state.settings.dashboardOrder = state.settings.dashboardOrder.filter(s => s !== symbol);
+    // Delete from stocks state to prevent stale references
+    if (state.stocks) delete state.stocks[symbol];
     renderDashboard(); renderAlerts();
     // Stay in edit mode — re-add handlers
     if (editMode) {
@@ -3335,7 +3338,7 @@ async function loadWhyMovingBadges(symbols) {
 }
 
 /* ─── CRYPTO NEWS VIEW ─────────────────────────────────────────── */
-let _cryptoNewsViewFilter = 'CoinTelegraph';
+let _cryptoNewsViewFilter = 'all';
 let _cryptoNewsViewCatFilter = 'all'; // 'all' | 'breaking'
 let _cryptoNewsViewRefreshTimer = null;
 const CRYPTO_URGENCY = ['breaking','alert','urgent','crash','surge','soars','plunges','collapses','halted','suspended','fraud','crisis','record high','record low','liquidat','hack','exploit','ban','sec','lawsuit'];
@@ -3354,8 +3357,7 @@ async function renderCryptoNewsView() {
         <button class="btn-secondary" onclick="loadCryptoNews(true).then(renderCryptoNewsView)">🔄 Refresh</button>
       </div>
     </div>
-    <div id="crypto-news-pulse-card"></div>
-    <!-- combined filter row: Breaking + sources on one line -->
+    <!-- combined filter row: Breaking + sources on one line (at top, above pulse) -->
     <div class="news-controls-compact" id="crypto-news-cat-bar" style="margin-bottom:10px">
       <div class="news-ctrl-group">
         <button class="news-chip ${_cryptoNewsViewCatFilter==='breaking'?'active':''}" data-cat="breaking" onclick="setCryptoNewsCatFilter('breaking')">🔴 Breaking</button>
@@ -3363,14 +3365,16 @@ async function renderCryptoNewsView() {
       </div>
       <div class="news-ctrl-divider"></div>
       <div class="news-ctrl-group" id="crypto-news-tabs">
-        <button class="news-tab" data-src="CoinTelegraph" onclick="setCryptoNewsFilter('CoinTelegraph')">CoinTelegraph</button>
-        <button class="news-tab" data-src="CoinDesk" onclick="setCryptoNewsFilter('CoinDesk')">CoinDesk</button>
-        <button class="news-tab" data-src="Decrypt" onclick="setCryptoNewsFilter('Decrypt')">Decrypt</button>
-        <button class="news-tab" data-src="Bitcoin Magazine" onclick="setCryptoNewsFilter('Bitcoin Magazine')">Bitcoin Mag</button>
-        <button class="news-tab" data-src="Google News" onclick="setCryptoNewsFilter('Google News')">Google News</button>
-        <button class="news-tab" data-src="x" onclick="setCryptoNewsFilter('x')">𝕏 Twitter</button>
+        <button class="news-tab${_cryptoNewsViewFilter==='all'?' active':''}" data-src="all" onclick="setCryptoNewsFilter('all')">All</button>
+        <button class="news-tab${_cryptoNewsViewFilter==='CoinTelegraph'?' active':''}" data-src="CoinTelegraph" onclick="setCryptoNewsFilter('CoinTelegraph')">CoinTelegraph</button>
+        <button class="news-tab${_cryptoNewsViewFilter==='CoinDesk'?' active':''}" data-src="CoinDesk" onclick="setCryptoNewsFilter('CoinDesk')">CoinDesk</button>
+        <button class="news-tab${_cryptoNewsViewFilter==='Decrypt'?' active':''}" data-src="Decrypt" onclick="setCryptoNewsFilter('Decrypt')">Decrypt</button>
+        <button class="news-tab${_cryptoNewsViewFilter==='Bitcoin Magazine'?' active':''}" data-src="Bitcoin Magazine" onclick="setCryptoNewsFilter('Bitcoin Magazine')">Bitcoin Mag</button>
+        <button class="news-tab${_cryptoNewsViewFilter==='Google News'?' active':''}" data-src="Google News" onclick="setCryptoNewsFilter('Google News')">Google News</button>
+        <button class="news-tab${_cryptoNewsViewFilter==='x'?' active':''}" data-src="x" onclick="setCryptoNewsFilter('x')">𝕏 Twitter</button>
       </div>
     </div>
+    <div id="crypto-news-pulse-card"></div>
     <div id="crypto-news-view-list" class="latest-news-list">
       <div class="news-loading">Loading crypto news…</div>
     </div>`;
@@ -3721,10 +3725,6 @@ async function renderCryptoDashboard() {
     }
   }
 
-  const subtitle = document.getElementById('crypto-subtitle');
-  if (subtitle) subtitle.textContent = `${state.cryptoData.length} coins · Updated ${new Date().toLocaleTimeString()}`;
-
-
   // Apply filter mode
   let visibleCoins = state.cryptoData.filter(c => !state.hiddenCryptoIds.includes(c.id));
   if (state.cryptoFilterMode === 'favorites') {
@@ -3737,6 +3737,10 @@ async function renderCryptoDashboard() {
   if (state.cryptoFilterMode !== 'favorites') {
     visibleCoins = visibleCoins.slice(0, state.cryptoRankLimit);
   }
+
+  // Update subtitle AFTER filtering to show correct count
+  const subtitle = document.getElementById('crypto-subtitle');
+  if (subtitle) subtitle.textContent = `${visibleCoins.length} coins · Updated ${new Date().toLocaleTimeString()}`;
   _updateCryptoFilterBtns();
   const mode = state.cryptoViewMode;
   // Show/hide zoom controls based on mode
