@@ -132,8 +132,12 @@ async function _preloadStockCharts() {
   }
 }
 
+const STABLE_SYMBOLS = new Set(['USDT','USDC','BUSD','DAI','TUSD','FRAX','USDP','GUSD','USDD','FDUSD','PYUSD','LUSD','SUSD','MIM']);
+
 async function _preload6MChange(coins) {
   for (const c of coins) {
+    // Stablecoins legitimately have ~0% change — skip KuCoin fetch, keep existing value
+    if (STABLE_SYMBOLS.has((c.symbol||'').toUpperCase())) continue;
     // Compute 30D from cached 30d chart or fetch it (Coinpaprika's percent_change_30d is unreliable/0)
     if (c.change30d == null || c.change30d === 0) {
       if (state.cryptoCharts[c.id]?.['30d']?.length >= 2) {

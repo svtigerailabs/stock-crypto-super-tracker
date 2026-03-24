@@ -1653,6 +1653,27 @@ async function fetchKuCoinPrices(symbol, startAt, endAt, type = '1day') {
   return { prices: json.data.slice().reverse().map(k => parseFloat(k[2])).filter(v => v > 0), firstTs: parseInt(json.data[json.data.length - 1][0]) * 1000 };
 }
 
+// Stablecoins: no KuCoin pair exists (USDT IS the quote currency). Return flat ~$1 prices.
+const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FRAX', 'USDP', 'GUSD', 'USDD', 'FDUSD', 'PYUSD', 'LUSD', 'SUSD', 'MIM']);
+
+// Tokens not on KuCoin → map to CoinGecko IDs for fallback
+const COINGECKO_ID_MAP = {
+  'STETH': 'staked-ether', 'WSTETH': 'wrapped-steth', 'CBETH': 'coinbase-wrapped-staked-eth',
+  'RETH': 'rocket-pool-eth', 'WEETH': 'wrapped-eeth', 'EETH': 'ether-fi-staked-eth',
+  'EZETH': 'renzo-restaked-eth', 'RSETH': 'kelp-dao-restaked-eth', 'OSETH': 'stakewise-v3-oseth',
+  'SOLVBTC': 'solv-protocol-solvbtc', 'LBTC': 'lombard-staked-btc',
+};
+
+async function fetchCoinGeckoPrices(cgId, days) {
+  const url = `https://api.coingecko.com/api/v3/coins/${cgId}/market_chart?vs_currency=usd&days=${days}&interval=daily`;
+  const r = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'StockCryptoSuperTracker/1.0' }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`CoinGecko ${r.status}`);
+  const json = await r.json();
+  const prices = (json.prices || []).map(p => p[1]).filter(v => v > 0);
+  if (prices.length < 2) throw new Error('Insufficient CoinGecko data');
+  return prices;
+}
+
 const cryptoChartCache = {};
 app.get('/api/crypto/:id/chart', async (req, res) => {
   const { id } = req.params;
@@ -1671,17 +1692,19 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
   try {
     let prices = [];
     const limit = LIMIT_MAP[range];
+    if (!limit && range !== '1d') return res.status(400).json({ error: 'Invalid range' });
+
+    // Stablecoins: no tradeable USDT pair — return flat $1 prices (correct ~0% change)
+    if (STABLECOINS.has(symbol)) {
+      const n = range === '1d' ? 24 : (limit || 30);
+      prices = Array(n).fill(1.0);
+      cryptoChartCache[cacheKey] = { data: prices, at: Date.now() };
+      return res.json(prices);
+    }
 
     if (range === '1d') {
-      // Intraday: 1h candles for last 24 hours
-      try {
-        const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - 86400, nowTs, '1hour');
-        prices = p;
-      } catch {}
-    } else if (!limit) {
-      return res.status(400).json({ error: 'Invalid range' });
+      try { const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - 86400, nowTs, '1hour'); prices = p; } catch {}
     } else if (limit > 1500) {
-      // 5Y (1825d): exceeds KuCoin's 1500-candle limit — use two sequential calls
       try {
         const startAt = nowTs - limit * 86400;
         const midTs = nowTs - 1500 * 86400;
@@ -1692,12 +1715,16 @@ app.get('/api/crypto/:id/chart', async (req, res) => {
         prices = [...older, ...recent];
       } catch {}
     } else {
-      // All other ranges: single KuCoin call
-      const startAt = nowTs - limit * 86400;
+      try { const { prices: p } = await fetchKuCoinPrices(symbol, nowTs - limit * 86400, nowTs); prices = p; } catch {}
+    }
+
+    // Fallback: CoinGecko for tokens without KuCoin pairs (STETH, WSTETH, etc.)
+    if (prices.length < 2 && COINGECKO_ID_MAP[symbol]) {
       try {
-        const { prices: p } = await fetchKuCoinPrices(symbol, startAt, nowTs);
-        prices = p;
-      } catch {}
+        const days = range === '1d' ? 1 : (limit || 30);
+        prices = await fetchCoinGeckoPrices(COINGECKO_ID_MAP[symbol], days);
+        console.log(`CoinGecko fallback used for ${symbol} (${range}): ${prices.length} prices`);
+      } catch (e) { console.warn(`CoinGecko fallback failed for ${symbol}:`, e.message); }
     }
 
     if (prices.length < 2) return res.status(500).json({ error: 'No chart data available' });
