@@ -1698,7 +1698,7 @@ const COINGECKO_ID_MAP = {
   'EZETH': 'renzo-restaked-eth', 'RSETH': 'kelp-dao-restaked-eth', 'OSETH': 'stakewise-v3-oseth',
   // BTC wrappers
   'WBTC': 'wrapped-bitcoin', 'BTCB': 'bitcoin-bep2', 'HBTC': 'huobi-btc',
-  'SOLVBTC': 'solv-protocol-solvbtc', 'LBTC': 'lombard-staked-btc',
+  'CBBTC': 'coinbase-wrapped-btc', 'SOLVBTC': 'solv-protocol-solvbtc', 'LBTC': 'lombard-staked-btc',
   // ETH wrappers
   'WETH': 'weth', 'WBNB': 'wbnb',
   // Exchange-native tokens (not listed on competing exchanges)
